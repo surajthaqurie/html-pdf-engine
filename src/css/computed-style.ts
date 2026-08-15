@@ -57,6 +57,8 @@ export type FloatType = "none" | "left" | "right";
 export type ClearType = "none" | "left" | "right" | "both";
 
 export type OverflowType = "visible" | "hidden" | "auto";
+export type SizingType = number | "auto" | "none";
+export type PositionOffset = number | string;
 
 export type BackgroundRepeat = "repeat" | "repeat-x" | "repeat-y" | "no-repeat";
 
@@ -83,7 +85,7 @@ export interface ComputedStyle {
 
   fontSize: number; // in pt
   fontFamily: string; // e.g. "Helvetica"
-  fontWeight: "normal" | "bold" | number | string;
+  fontWeight: number | string;
   fontStyle: "normal" | "italic" | "oblique";
   lineHeight: number; // pt or multiplier
   letterSpacing: number; // in pt
@@ -101,10 +103,10 @@ export interface ComputedStyle {
   width: number | "auto";
   height: number | "auto";
 
-  minWidth: number | "auto" | "none";
-  maxWidth: number | "auto" | "none";
-  minHeight: number | "auto" | "none";
-  maxHeight: number | "auto" | "none";
+  minWidth: SizingType;
+  maxWidth: SizingType;
+  minHeight: SizingType;
+  maxHeight: SizingType;
 
   overflow: OverflowType;
   overflowX: OverflowType;
@@ -154,10 +156,10 @@ export interface ComputedStyle {
 
   // Positioning Properties
   position: PositionType;
-  top: number | string | "auto";
-  right: number | string | "auto";
-  bottom: number | string | "auto";
-  left: number | string | "auto";
+  top: PositionOffset;
+  right: PositionOffset;
+  bottom: PositionOffset;
+  left: PositionOffset;
   zIndex: number | "auto";
 
   // Float & Clear
@@ -189,41 +191,75 @@ export interface ComputedStyle {
   justifyItems: GridAlign;
   justifySelf: GridAlign;
   alignSelf: GridAlign;
+
+  // SVG Properties
+  fill: string;
+  stroke: string;
+  strokeWidth: string;
+  strokeLinecap: string;
+  strokeLinejoin: string;
+  strokeDasharray: string;
+  fillOpacity: number;
+  strokeOpacity: number;
+}
+
+function getInheritedProps(parent?: ComputedStyle) {
+  if (parent) {
+    return {
+      color: { ...parent.color },
+      fontSize: parent.fontSize,
+      fontFamily: parent.fontFamily,
+      fontWeight: parent.fontWeight,
+      fontStyle: parent.fontStyle,
+      lineHeight: parent.lineHeight,
+      letterSpacing: parent.letterSpacing,
+      wordSpacing: parent.wordSpacing,
+      textTransform: parent.textTransform,
+      textIndent: parent.textIndent,
+      textDecoration: parent.textDecoration,
+      whiteSpace: parent.whiteSpace,
+      textAlign: parent.textAlign,
+      verticalAlign: parent.verticalAlign,
+      textOverflow: parent.textOverflow,
+      visibility: parent.visibility,
+      customProperties: { ...parent.customProperties },
+    };
+  }
+  return {
+    color: { r: 0, g: 0, b: 0, a: 1 },
+    fontSize: 12,
+    fontFamily: "Helvetica",
+    fontWeight: "normal",
+    fontStyle: "normal" as const,
+    lineHeight: 1.2,
+    letterSpacing: 0,
+    wordSpacing: 0,
+    textTransform: "none" as TextTransform,
+    textIndent: 0,
+    textDecoration: "none" as TextDecoration,
+    whiteSpace: "normal" as WhiteSpace,
+    textAlign: "left" as const,
+    verticalAlign: "baseline" as VerticalAlign,
+    textOverflow: "clip" as TextOverflow,
+    visibility: "visible" as Visibility,
+    customProperties: {} as Record<string, string>,
+  };
 }
 
 export function createDefaultComputedStyle(
   parent?: ComputedStyle,
 ): ComputedStyle {
-  const defaultColor: ParsedColor = parent
-    ? { ...parent.color }
-    : { r: 0, g: 0, b: 0, a: 1 };
+  const inherited = getInheritedProps(parent);
   const defaultBorderColor: ParsedColor = { r: 0, g: 0, b: 0, a: 1 };
 
   return {
+    ...inherited,
     display: "block",
-    color: defaultColor,
     backgroundColor: null,
     backgroundImage: null,
     backgroundPosition: "0% 0%",
     backgroundSize: "auto",
     backgroundRepeat: "repeat",
-
-    fontSize: parent ? parent.fontSize : 12,
-    fontFamily: parent ? parent.fontFamily : "Helvetica",
-    fontWeight: parent ? parent.fontWeight : "normal",
-    fontStyle: parent ? parent.fontStyle : "normal",
-    lineHeight: parent ? parent.lineHeight : 1.2,
-    letterSpacing: parent ? parent.letterSpacing : 0,
-    wordSpacing: parent ? parent.wordSpacing : 0,
-    textTransform: parent ? parent.textTransform : "none",
-    textIndent: parent ? parent.textIndent : 0,
-    textDecoration: parent ? parent.textDecoration : "none",
-    whiteSpace: parent ? parent.whiteSpace : "normal",
-
-    textAlign: parent ? parent.textAlign : "left",
-    verticalAlign: parent ? parent.verticalAlign : "baseline",
-    textOverflow: parent ? parent.textOverflow : "clip",
-    visibility: parent ? parent.visibility : "visible",
 
     width: "auto",
     height: "auto",
@@ -305,8 +341,6 @@ export function createDefaultComputedStyle(
     float: "none",
     clear: "none",
 
-    customProperties: parent ? { ...parent.customProperties } : {},
-
     flexDirection: "row",
     flexWrap: "nowrap",
     justifyContent: "flex-start",
@@ -327,6 +361,15 @@ export function createDefaultComputedStyle(
     justifyItems: "stretch",
     justifySelf: "auto",
     alignSelf: "auto",
+
+    fill: "black",
+    stroke: "none",
+    strokeWidth: "1",
+    strokeLinecap: "butt",
+    strokeLinejoin: "miter",
+    strokeDasharray: "none",
+    fillOpacity: 1,
+    strokeOpacity: 1,
   };
 }
 

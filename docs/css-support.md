@@ -1,7 +1,7 @@
 # CSS Support Reference
 
 > **html-pdf-engine** targets deterministic, high-performance server-side PDF generation, **not** full browser rendering.
-> This document reflects the CSS subset supported as of Phase 22.
+> This document reflects the CSS subset supported by the current implementation.
 
 ---
 
@@ -123,7 +123,7 @@
 | `break-after` / `page-break-after` | `auto`, `page` / `always` |
 | `break-inside` / `page-break-inside` | `auto`, `avoid` |
 
-### CSS Custom Properties (Variables) — Phase 22
+### CSS Custom Properties (Variables)
 
 ```css
 :root {
@@ -145,7 +145,7 @@ p { font-size: var(--font-size-body); }
 - ✅ Cycle detection (recursive references terminate safely)
 - ✅ Inheritance through DOM hierarchy (child elements receive parent's variables)
 
-### Media Queries — Phase 22
+### Media Queries
 
 ```css
 /* Supported */
@@ -235,7 +235,7 @@ These features are **intentionally excluded** to preserve zero-dependency, deter
 
 ## Asset Handling
 
-### Remote Assets via AssetResolver (Phase 22)
+### Remote Assets via AssetResolver
 
 `html-pdf-engine` does not automatically fetch remote resources, but exposes an opt-in `AssetResolver` interface for controlled access:
 
@@ -271,7 +271,7 @@ const pdf = await HtmlToPdf.generateBuffer({
 | Web fonts from CDN | ❌ (opt-in resolver) | ✅ |
 | Pixel-perfect render | ❌ | ✅ |
 | Runtime dependencies | **0** | Chromium (~200 MB) |
-| Render speed | **~0.4–1.3 ms** | 100–800 ms |
+| Engine render speed | **Low-millisecond (~0.96–2.71 ms, structured docs)** | Varies (browser process & rendering pipeline) |
 | Deterministic output | **✅ Byte-identical** | ❌ Varies |
-| Server footprint | **< 1 MB** | 200+ MB |
-| Thread safety | **✅** | ❌ Requires process isolation |
+| Runtime binary footprint | **0 dependencies (~146.5 kB tarball)** | Chromium binary (~200 MB) |
+| Thread safety | **✅ In-memory heap** | ❌ Requires process isolation |

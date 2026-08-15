@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { HtmlToPdf } from "../../../src/core/html-to-pdf.js";
+import { validatePdfStructure } from "../../utils/pdf-validator.js";
 
-describe("Real-World Fixture — Multi-Page Executive Report", () => {
-  it("renders a 3-page report with repeated header, table pagination, and outline navigation", async () => {
+describe("Real-World Fixture 7 — Multi-Page Executive Report", () => {
+  it("renders a 3-page report with fixed elements, table pagination, and internal links", async () => {
     const rows = Array.from({ length: 45 })
       .map(
         (_, i) => `
@@ -58,7 +59,13 @@ describe("Real-World Fixture — Multi-Page Executive Report", () => {
       </html>
     `;
 
-    const doc = await HtmlToPdf.generate({ html });
-    expect(doc.getPages().length).toBeGreaterThanOrEqual(2);
+    const buf1 = await HtmlToPdf.generateBuffer({ html, compress: false });
+    const buf2 = await HtmlToPdf.generateBuffer({ html, compress: false });
+    expect(buf1.equals(buf2)).toBe(true);
+
+    const validation = validatePdfStructure(buf1);
+    expect(validation.valid).toBe(true);
+    expect(validation.errors).toEqual([]);
+    expect(validation.pageCount).toBeGreaterThanOrEqual(2);
   });
 });

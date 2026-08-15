@@ -12,17 +12,28 @@ This document details the security posture and hardening measures built into `ht
 
 ## Hardening Measures
 
-### 1. Complete Network & SSRF Isolation
-- **Zero HTTP/HTTPS requests**: The engine contains no `http`, `https`, or `fetch` modules.
-- **SSRF Prevention**: Remote URL references in `<img src="...">` or `<link href="...">` cannot trigger outgoing network requests or internal network scanning.
+### 1. Default Offline Security & Opt-In SSRF Protections
+- **Default Offline Execution**: The default rendering pipeline initiates no implicit network requests for remote stylesheets, images, or web fonts.
+- **Opt-In Network Resolution (`createNetworkAssetResolver`)**: When remote asset loading is required, applications can pass an opt-in network resolver configured with:
+  - **SSRF Protection**: Blocks local and private IP address ranges (`127.0.0.1`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `::1`) by default.
+  - **Resource Boundaries**: Strict configurable response size limits (`maxSizeBytes`), connection timeouts (`timeoutMs`), and HTTP redirect limits (`maxRedirects`).
+  - **Protocol Filtering**: Restricts fetches strictly to HTTP/HTTPS schemes, rejecting arbitrary protocols (`file://`, `gopher://`).
 
-### 2. JavaScript Non-Execution
-- **Script Disabling**: `<script>` tags and inline event handlers (`onclick`, `onload`) are safely ignored during layout rendering and never executed.
-- **RCE Prevention**: Prevents Remote Code Execution through arbitrary script evaluation.
+### 2. JavaScript Non-Execution & Isolation
+- **Script Neutralization**: `<script>` tags and inline event handlers (`onclick`, `onload`, `onerror`) are parsed and assigned `display: none`, completely stripping them from execution.
+- **RCE Prevention**: Prevents Remote Code Execution vulnerabilities associated with evaluation of untrusted dynamic script strings.
 
-### 3. In-Memory Execution & Resource Bounds
-- **Zero Binary Dependencies**: Avoids headless browser binary exploits.
-- **Deterministic Heap Usage**: Pure memory processing prevents memory leaks associated with browser instance pools.
+### 3. PDF Encoding & Serialization Safety
+- **String Escaping**: Uses `escapePdfString` for literal PDF strings, properly escaping parentheses `()`, backslashes `\`, and unprintable characters to prevent stream injection attacks.
+- **Unicode Support**: Safely serializes UTF-16BE hex strings with Byte Order Marks (`FEFF`) for non-ASCII characters (such as Devanagari, CJK, and special symbols).
+
+### 4. Malformed Input Resilience
+- **HTML Recovery**: Auto-recovers from unclosed tags, dangling attributes, and unescaped HTML entities without crashing.
+- **CSS Fault Tolerance**: Property value resolution is wrapped in isolated exception handlers, preventing malformed CSS declarations (e.g. `calc(;;;)`, invalid units) from crashing server worker threads.
+
+### 5. In-Memory Execution & Resource Bounds
+- **Zero Subprocess Exploits**: Pure Node.js execution avoids binary exploit vectors inherent in headless browser automation packages.
+- **Deterministic Memory Allocation**: Thread-safe isolated `LayoutContext` instances prevent global state contamination across concurrent rendering tasks.
 
 ---
 

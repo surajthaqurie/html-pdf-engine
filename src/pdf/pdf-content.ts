@@ -47,8 +47,10 @@ export function generateRoundedRectPath(
   }
 
   const ops: string[] = [];
-  ops.push(`${(x + r1).toFixed(4)} ${(y + h).toFixed(4)} m`);
-  ops.push(`${(x + w - r2).toFixed(4)} ${(y + h).toFixed(4)} l`);
+  ops.push(
+    `${(x + r1).toFixed(4)} ${(y + h).toFixed(4)} m`,
+    `${(x + w - r2).toFixed(4)} ${(y + h).toFixed(4)} l`
+  );
   if (r2 > 0) {
     ops.push(
       `${(x + w - r2 * (1 - k)).toFixed(4)} ${(y + h).toFixed(4)} ${(x + w).toFixed(4)} ${(y + h - r2 * (1 - k)).toFixed(4)} ${(x + w).toFixed(4)} ${(y + h - r2).toFixed(4)} c`,
@@ -77,7 +79,11 @@ export function generateRoundedRectPath(
 }
 
 export class PDFContentStream {
-  private ops: PDFOp[] = [];
+  private readonly ops: PDFOp[] = [];
+
+  addRawOp(code: string): void {
+    this.ops.push({ type: "raw", code });
+  }
 
   setStrokeColor(color: ColorRGB): void {
     const r = color.r.toFixed(4);
@@ -161,9 +167,11 @@ export class PDFContentStream {
     if (style) {
       this.setLineDash(style, width);
     }
-    this.ops.push({ type: "raw", code: `${x1.toFixed(4)} ${y1.toFixed(4)} m` });
-    this.ops.push({ type: "raw", code: `${x2.toFixed(4)} ${y2.toFixed(4)} l` });
-    this.ops.push({ type: "raw", code: "S" });
+    this.ops.push(
+      { type: "raw", code: `${x1.toFixed(4)} ${y1.toFixed(4)} m` },
+      { type: "raw", code: `${x2.toFixed(4)} ${y2.toFixed(4)} l` },
+      { type: "raw", code: "S" }
+    );
     if (style) {
       this.setLineDash("solid", 1);
     }
@@ -179,11 +187,11 @@ export class PDFContentStream {
     wordSpacing = 0,
   ): void {
     const escapedText = text
-      .replace(/\\/g, "\\\\")
-      .replace(/\(/g, "\\(")
-      .replace(/\)/g, "\\)")
-      .replace(/\r/g, "\\r")
-      .replace(/\n/g, "\\n");
+      .replaceAll("\\", String.raw`\\`)
+      .replaceAll("(", String.raw`\(`)
+      .replaceAll(")", String.raw`\)`)
+      .replaceAll("\r", String.raw`\r`)
+      .replaceAll("\n", String.raw`\n`);
 
     const tcCode = letterSpacing !== 0 ? `${letterSpacing.toFixed(4)} Tc\n` : "";
     const resetTc = letterSpacing !== 0 ? `\n0.0000 Tc` : "";
@@ -230,26 +238,10 @@ export class PDFContentStream {
     this.ops.push({ type: "raw", code });
   }
 
-  drawCustomText(
-    text: string,
-    fontName: string,
-    fontAlias: string,
-    fontSize: number,
-    x: number,
-    y: number,
-    letterSpacing = 0,
-    wordSpacing = 0,
-  ): void {
+  drawCustomText(opts: Omit<DrawCustomTextOp, "type">): void {
     this.ops.push({
       type: "customText",
-      text,
-      fontName,
-      fontAlias,
-      fontSize,
-      x,
-      y,
-      letterSpacing,
-      wordSpacing,
+      ...opts,
     });
   }
 
@@ -304,36 +296,38 @@ export class PDFContentStream {
       if (op.type === "raw") {
         lines.push(op.code);
       } else if (op.type === "customText") {
-        const hex = gidResolver
-          ? gidResolver(op.fontName, op.text)
-          : op.text;
-        const tcCode =
-          op.letterSpacing && op.letterSpacing !== 0
-            ? `${op.letterSpacing.toFixed(4)} Tc\n`
-            : "";
-        const resetTc =
-          op.letterSpacing && op.letterSpacing !== 0 ? `\n0.0000 Tc` : "";
-        const twCode =
-          op.wordSpacing && op.wordSpacing !== 0
-            ? `${op.wordSpacing.toFixed(4)} Tw\n`
-            : "";
-        const resetTw =
-          op.wordSpacing && op.wordSpacing !== 0 ? `\n0.0000 Tw` : "";
-
-        const code =
-          `BT\n` +
-          tcCode +
-          twCode +
-          `/${op.fontAlias} ${op.fontSize.toFixed(4)} Tf\n` +
-          `1 0 0 1 ${op.x.toFixed(4)} ${op.y.toFixed(4)} Tm\n` +
-          `<${hex}> Tj` +
-          resetTw +
-          resetTc +
-          `\nET`;
-        lines.push(code);
+        lines.push(this.formatCustomTextOp(op, gidResolver));
       }
     }
     return lines.join("\n");
+  }
+
+  private formatCustomTextOp(op: DrawCustomTextOp, gidResolver?: GidHexResolver): string {
+    const hex = gidResolver
+      ? gidResolver(op.fontName, op.text)
+      : op.text;
+    const tcCode =
+      op.letterSpacing && op.letterSpacing !== 0
+        ? `${op.letterSpacing.toFixed(4)} Tc\n`
+        : "";
+    const resetTc =
+      op.letterSpacing && op.letterSpacing !== 0 ? `\n0.0000 Tc` : "";
+    const twCode =
+      op.wordSpacing && op.wordSpacing !== 0
+        ? `${op.wordSpacing.toFixed(4)} Tw\n`
+        : "";
+    const resetTw =
+      op.wordSpacing && op.wordSpacing !== 0 ? `\n0.0000 Tw` : "";
+
+    return `BT\n` +
+      tcCode +
+      twCode +
+      `/${op.fontAlias} ${op.fontSize.toFixed(4)} Tf\n` +
+      `1 0 0 1 ${op.x.toFixed(4)} ${op.y.toFixed(4)} Tm\n` +
+      `<${hex}> Tj` +
+      resetTw +
+      resetTc +
+      `\nET`;
   }
 
   toBytes(gidResolver?: GidHexResolver): Uint8Array {

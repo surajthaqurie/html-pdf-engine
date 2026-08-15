@@ -4,7 +4,6 @@ import { compareSpecificity } from "./specificity.js";
 import {
   ComputedStyle,
   createDefaultComputedStyle,
-  DisplayType,
 } from "./computed-style.js";
 import { parseCssUnit, parseCssColor, ParsedColor } from "./values/units.js";
 import { DEFAULT_ELEMENT_STYLES, NAMED_COLORS } from "../constants/css.js";
@@ -23,41 +22,56 @@ export interface PageRuleConfig {
   margins?: Partial<PageMargins>;
 }
 
+function applyPageSizeRule(config: PageRuleConfig, val: string): void {
+  const parts = val.trim().split(/\s+/);
+  if (parts.length === 1) {
+    const first = parts[0] ?? "";
+    const lower = first.toLowerCase();
+    if (lower === "landscape" || lower === "portrait") {
+      config.orientation = lower as PageOrientation;
+    } else if (STANDARD_PAGE_SIZES[first as PageSizeName]) {
+      config.pageSize = first as PageSizeName;
+    } else if (/^\d+(pt|px|mm|cm|in)?$/.exec(first)) {
+      const w = parseCssUnit(first);
+      config.pageSize = { width: w, height: w };
+    }
+  } else if (parts.length >= 2) {
+    const first = parts[0] ?? "";
+    const second = parts[1] ?? "";
+    const lowerSecond = second.toLowerCase();
+    if (STANDARD_PAGE_SIZES[first as PageSizeName]) {
+      config.pageSize = first as PageSizeName;
+      if (lowerSecond === "landscape" || lowerSecond === "portrait") {
+        config.orientation = lowerSecond as PageOrientation;
+      }
+    } else if (/^\d+/.exec(first) && /^\d+/.exec(second)) {
+      config.pageSize = {
+        width: parseCssUnit(first),
+        height: parseCssUnit(second),
+      };
+    }
+  }
+}
+
+function applyPageMarginRule(config: PageRuleConfig, key: string, val: string): void {
+  config.margins ??= {};
+  if (key === "margin-top") config.margins.top = parseCssUnit(val);
+  else if (key === "margin-right") config.margins.right = parseCssUnit(val);
+  else if (key === "margin-bottom") config.margins.bottom = parseCssUnit(val);
+  else if (key === "margin-left") config.margins.left = parseCssUnit(val);
+  else if (key === "margin") {
+    const m = parseCssUnit(val);
+    config.margins = { top: m, right: m, bottom: m, left: m };
+  }
+}
+
 export function parsePageRules(rules: CSSRule[]): PageRuleConfig {
   const config: PageRuleConfig = {};
   const pageRules = rules.filter((r) => r.selector.startsWith("@page"));
   for (const rule of pageRules) {
     for (const [key, val] of Object.entries(rule.declarations)) {
       if (key === "size") {
-        const parts = val.trim().split(/\s+/);
-        if (parts.length === 1) {
-          const first = parts[0] ?? "";
-          const lower = first.toLowerCase();
-          if (lower === "landscape" || lower === "portrait") {
-            config.orientation = lower as PageOrientation;
-          } else if (STANDARD_PAGE_SIZES[first as PageSizeName]) {
-            config.pageSize = first as PageSizeName;
-          } else if (first.match(/^[0-9]+(pt|px|mm|cm|in)?$/)) {
-            const w = parseCssUnit(first);
-            config.pageSize = { width: w, height: w };
-          }
-        } else if (parts.length >= 2) {
-          const first = parts[0] ?? "";
-          const second = parts[1] ?? "";
-          const lowerSecond = second.toLowerCase();
-
-          if (STANDARD_PAGE_SIZES[first as PageSizeName]) {
-            config.pageSize = first as PageSizeName;
-            if (lowerSecond === "landscape" || lowerSecond === "portrait") {
-              config.orientation = lowerSecond as PageOrientation;
-            }
-          } else if (first.match(/^[0-9]+/) && second.match(/^[0-9]+/)) {
-            config.pageSize = {
-              width: parseCssUnit(first),
-              height: parseCssUnit(second),
-            };
-          }
-        }
+        applyPageSizeRule(config, val);
       } else if (
         key === "margin-top" ||
         key === "margin-right" ||
@@ -65,21 +79,12 @@ export function parsePageRules(rules: CSSRule[]): PageRuleConfig {
         key === "margin-left" ||
         key === "margin"
       ) {
-        if (!config.margins) config.margins = {};
-        if (key === "margin-top") config.margins.top = parseCssUnit(val);
-        if (key === "margin-right") config.margins.right = parseCssUnit(val);
-        if (key === "margin-bottom") config.margins.bottom = parseCssUnit(val);
-        if (key === "margin-left") config.margins.left = parseCssUnit(val);
-        if (key === "margin") {
-          const m = parseCssUnit(val);
-          config.margins = { top: m, right: m, bottom: m, left: m };
-        }
+        applyPageMarginRule(config, key, val);
       }
     }
   }
   return config;
 }
-
 /**
  * CascadeEngine applies CSS rules to DOM elements in specificity order,
  * producing a resolved `ComputedStyle` for each element.
@@ -106,8 +111,8 @@ export function parsePageRules(rules: CSSRule[]): PageRuleConfig {
  *     so their rules apply unconditionally in the static PDF context.
  */
 export class CascadeEngine {
-  private parser = new CSSParser();
-  private fontManager: FontManager;
+  private readonly parser = new CSSParser();
+  private readonly fontManager: FontManager;
 
   constructor(fontManager?: FontManager) {
     this.fontManager = fontManager ?? new FontManager();
@@ -196,108 +201,82 @@ export class CascadeEngine {
     return computed;
   }
 
+  private matchesDescendantSelector(element: ElementNode, parts: string[]): boolean {
+    const lastPart = parts.at(-1);
+    if (!lastPart || !this.matchesSelector(element, lastPart)) return false;
+    let currentParent = element.parent;
+    let targetIdx = parts.length - 2;
+    while (currentParent && targetIdx >= 0) {
+      const targetSel = parts[targetIdx];
+      if (
+        targetSel &&
+        currentParent instanceof ElementNode &&
+        this.matchesSelector(currentParent, targetSel)
+      ) {
+        targetIdx--;
+      }
+      currentParent = currentParent.parent;
+    }
+    return targetIdx < 0;
+  }
+
+  private matchTagAndClass(element: ElementNode, sel: string, dotIdx: number): boolean {
+    const tag = dotIdx > 0 ? sel.slice(0, dotIdx).toLowerCase() : "";
+    const cls = sel.slice(dotIdx + 1).split(/[.#:]/)[0];
+    if (tag && tag !== element.tagName) return false;
+    return cls ? element.classList.includes(cls) : false;
+  }
+
+  private matchTagAndId(element: ElementNode, sel: string, hashIdx: number): boolean {
+    const tag = sel.slice(0, hashIdx).toLowerCase();
+    const id = sel.slice(hashIdx + 1).split(/[.#:]/)[0];
+    if (tag && tag !== element.tagName) return false;
+    return id ? element.id === id : false;
+  }
+
+  private matchesCompoundSelector(element: ElementNode, sel: string): boolean {
+    if (sel.startsWith(".")) return element.classList.includes(sel.slice(1));
+    if (sel.startsWith("#")) return element.id === sel.slice(1);
+    const dotIdx = sel.indexOf(".");
+    const hashIdx = sel.indexOf("#");
+    if (dotIdx !== -1 && (hashIdx === -1 || dotIdx < hashIdx)) {
+      return this.matchTagAndClass(element, sel, dotIdx);
+    }
+    if (hashIdx > 0) {
+      return this.matchTagAndId(element, sel, hashIdx);
+    }
+    return false;
+  }
+
   private matchesSelector(element: ElementNode, selector: string): boolean {
     const sel = selector.trim();
     if (sel === "*") return true;
-
-    // :root pseudo-class — matches the html element or any top-level root
-    if (sel === ":root") {
-      return element.tagName === "html" || element.parent == null;
-    }
-
-    // Pseudo-class stripping — strip :hover, :focus, :first-child, etc.
-    // We accept the rule for PDF rendering (static document, no interaction)
+    if (sel === ":root") return element.tagName === "html" || element.parent == null;
     const strippedSel = sel.replace(/::?[a-z-]+(?:\([^)]*\))?/g, "").trim();
     if (strippedSel !== sel && strippedSel) {
       return this.matchesSelector(element, strippedSel);
     }
-
-    // Descendant selector (e.g. "table td" or "div.container p.title")
     if (sel.includes(" ")) {
-      const parts = sel.split(/\s+/);
-      const lastPart = parts[parts.length - 1];
-      if (!lastPart || !this.matchesSelector(element, lastPart)) return false;
-
-      let currentParent = element.parent;
-      let targetIdx = parts.length - 2;
-
-      while (currentParent && targetIdx >= 0) {
-        const targetSel = parts[targetIdx];
-        if (
-          targetSel &&
-          currentParent instanceof ElementNode &&
-          this.matchesSelector(currentParent, targetSel)
-        ) {
-          targetIdx--;
-        }
-        currentParent = currentParent.parent;
-      }
-
-      return targetIdx < 0;
+      return this.matchesDescendantSelector(element, sel.split(/\s+/));
     }
-
-    // Single tag
     if (sel.toLowerCase() === element.tagName) return true;
-
-    // Single class (.invoice)
-    if (sel.startsWith(".")) {
-      return element.classList.includes(sel.slice(1));
-    }
-
-    // Single ID (#title)
-    if (sel.startsWith("#")) {
-      return element.id === sel.slice(1);
-    }
-
-    // Compound selectors: tag.class or tag#id with optional pseudo-classes
-    // Split on . or # but not inside brackets
-    const dotIdx = sel.indexOf(".");
-    const hashIdx = sel.indexOf("#");
-
-    // Compound tag.class (div.invoice)
-    if (dotIdx > 0 && (hashIdx === -1 || dotIdx < hashIdx)) {
-      const tag = sel.slice(0, dotIdx).toLowerCase();
-      const rest = sel.slice(dotIdx + 1);
-      const cls = rest.split(/[.#:]/)[0];
-      if (tag && tag !== element.tagName) return false;
-      return cls ? element.classList.includes(cls) : false;
-    }
-
-    if (dotIdx === 0) {
-      const cls = sel.slice(1).split(/[.#:]/)[0];
-      return cls ? element.classList.includes(cls) : false;
-    }
-
-    // Compound tag#id (div#title)
-    if (hashIdx > 0) {
-      const tag = sel.slice(0, hashIdx).toLowerCase();
-      const id = sel.slice(hashIdx + 1).split(/[.#:]/)[0];
-      if (tag && tag !== element.tagName) return false;
-      return id ? element.id === id : false;
-    }
-
-    return false;
+    return this.matchesCompoundSelector(element, sel);
   }
-
   public evaluateMediaQuery(query: string, containerWidth: number): boolean {
     const clean = query.toLowerCase().trim();
     if (clean === "print" || clean === "all") return true;
     if (clean === "screen" || clean === "speech") return false;
 
     // Check min-width feature
-    const minMatch = clean.match(
-      /\(min-width:\s*([0-9.]+(?:px|pt|mm|cm|in)?)\)/,
-    );
-    if (minMatch && minMatch[1]) {
+    const minMatch = /\(min-width:\s*([\d.]+(?:px|pt|mm|cm|in)?)\)/.exec(clean);
+    if (minMatch?.[1]) {
       const minW = parseCssUnit(minMatch[1]);
       if (containerWidth < minW) return false;
     }
 
     // Check max-width feature
-    const maxMatch = clean.match(
-      /\(max-width:\s*([0-9.]+(?:px|pt|mm|cm|in)?)\)/,
-    );
-    if (maxMatch && maxMatch[1]) {
+    const maxMatch = /\(max-width:\s*([\d.]+(?:px|pt|mm|cm|in)?)\)/.exec(clean);
+    if (maxMatch?.[1]) {
       const maxW = parseCssUnit(maxMatch[1]);
       if (containerWidth > maxW) return false;
     }
@@ -310,10 +289,10 @@ export class CascadeEngine {
     variables: Record<string, string>,
     visited: Set<string> = new Set(),
   ): string {
-    if (!val || !val.includes("var(")) return val;
+    if (!val?.includes("var(")) return val;
 
     return val.replace(
-      /var\(\s*(--[a-zA-Z0-9_-]+)\s*(?:,\s*([\s\S]*?))?\)/g,
+      /var\(\s*(--[\w-]+)(?:,([^)]*))?\)/g,
       (_fullMatch, varName: string, fallback?: string) => {
         if (visited.has(varName)) {
           // Cycle detected! Stop recursion safely.
@@ -342,455 +321,475 @@ export class CascadeEngine {
     );
   }
 
+  private parseFontWeight(val: string): number | string {
+    const fw = val.toLowerCase().trim();
+    if (fw === "bold") return 700;
+    if (fw === "normal") return 400;
+    const num = Number.parseInt(fw, 10);
+    return Number.isNaN(num) ? fw : num;
+  }
+
+  private parseLineHeight(val: string): number {
+    const v = val.toLowerCase().trim();
+    if (v === "normal") return 1.2;
+    const parsed = Number.parseFloat(v);
+    const hasUnit = v.endsWith("px") || v.endsWith("pt") || v.endsWith("mm") || v.endsWith("cm") || v.endsWith("in") || v.endsWith("%");
+    if (!Number.isNaN(parsed) && !hasUnit) return parsed;
+    return parseCssUnit(val);
+  }
+
+  private applyFont(computed: ComputedStyle, prop: string, val: string): boolean {
+    switch (prop) {
+      case "color": computed.color = parseCssColor(val); return true;
+      case "font-size": computed.fontSize = parseCssUnit(val, computed.fontSize); return true;
+      case "font-family": computed.fontFamily = val.trim(); return true;
+      case "font-weight": computed.fontWeight = this.parseFontWeight(val); return true;
+      case "font-style": computed.fontStyle = val.includes("italic") || val.includes("oblique") ? "italic" : "normal"; return true;
+      case "line-height": computed.lineHeight = this.parseLineHeight(val); return true;
+      default: return false;
+    }
+  }
+
+  private applyTextSpacing(computed: ComputedStyle, prop: string, val: string, containerWidth: number): boolean {
+    switch (prop) {
+      case "letter-spacing":
+        computed.letterSpacing = val.toLowerCase().trim() === "normal" ? 0 : parseCssUnit(val);
+        return true;
+      case "word-spacing":
+        computed.wordSpacing = val.toLowerCase().trim() === "normal" ? 0 : parseCssUnit(val);
+        return true;
+      case "text-indent":
+        computed.textIndent = parseCssUnit(val, containerWidth);
+        return true;
+      case "vertical-align": {
+        const v = val.toLowerCase().trim();
+        if (v === "baseline" || v === "top" || v === "middle" || v === "bottom") computed.verticalAlign = v as any;
+        else computed.verticalAlign = parseCssUnit(val);
+        return true;
+      }
+      default: return false;
+    }
+  }
+
+  private applyTextFormatting(computed: ComputedStyle, prop: string, val: string): boolean {
+    const v = val.toLowerCase().trim();
+    switch (prop) {
+      case "text-transform":
+        if (v === "none" || v === "uppercase" || v === "lowercase" || v === "capitalize") computed.textTransform = v as any;
+        return true;
+      case "text-overflow":
+        if (v === "clip" || v === "ellipsis") computed.textOverflow = v as any;
+        return true;
+      case "text-decoration":
+        if (v === "none" || v === "underline" || v === "line-through" || v === "overline") computed.textDecoration = v as any;
+        return true;
+      case "white-space":
+        if (v === "normal" || v === "nowrap" || v === "pre" || v === "pre-wrap" || v === "pre-line") computed.whiteSpace = v as any;
+        return true;
+      case "text-align":
+        computed.textAlign = val as any;
+        return true;
+      default: return false;
+    }
+  }
+
+  private applyText(computed: ComputedStyle, prop: string, val: string, containerWidth: number): boolean {
+    if (this.applyTextSpacing(computed, prop, val, containerWidth)) return true;
+    return this.applyTextFormatting(computed, prop, val);
+  }
+
+  private applyTypography(computed: ComputedStyle, prop: string, val: string, containerWidth: number): boolean {
+    if (this.applyFont(computed, prop, val)) return true;
+    return this.applyText(computed, prop, val, containerWidth);
+  }
+
+  private applyDimensions(computed: ComputedStyle, prop: string, val: string, containerWidth: number): boolean {
+    switch (prop) {
+      case "width": computed.width = val === "auto" ? "auto" : parseCssUnit(val, containerWidth); return true;
+      case "height": computed.height = val === "auto" ? "auto" : parseCssUnit(val); return true;
+      case "min-width": {
+        const v = val.toLowerCase().trim();
+        computed.minWidth = v === "none" || v === "auto" ? "none" : parseCssUnit(val, containerWidth);
+        return true;
+      }
+      case "max-width": {
+        const v = val.toLowerCase().trim();
+        computed.maxWidth = v === "none" || v === "auto" ? "none" : parseCssUnit(val, containerWidth);
+        return true;
+      }
+      case "min-height": {
+        const v = val.toLowerCase().trim();
+        computed.minHeight = v === "none" || v === "auto" ? "none" : parseCssUnit(val);
+        return true;
+      }
+      case "max-height": {
+        const v = val.toLowerCase().trim();
+        computed.maxHeight = v === "none" || v === "auto" ? "none" : parseCssUnit(val);
+        return true;
+      }
+      default: return false;
+    }
+  }
+
+  private applySpacingAndDisplay(computed: ComputedStyle, prop: string, val: string, containerWidth: number): boolean {
+    switch (prop) {
+      case "margin-top": computed.marginTop = parseCssUnit(val, containerWidth); return true;
+      case "margin-right": computed.marginRight = parseCssUnit(val, containerWidth); return true;
+      case "margin-bottom": computed.marginBottom = parseCssUnit(val, containerWidth); return true;
+      case "margin-left": computed.marginLeft = parseCssUnit(val, containerWidth); return true;
+      case "padding-top": computed.paddingTop = parseCssUnit(val, containerWidth); return true;
+      case "padding-right": computed.paddingRight = parseCssUnit(val, containerWidth); return true;
+      case "padding-bottom": computed.paddingBottom = parseCssUnit(val, containerWidth); return true;
+      case "padding-left": computed.paddingLeft = parseCssUnit(val, containerWidth); return true;
+      case "overflow":
+      case "overflow-x":
+      case "overflow-y": {
+        const v = val.toLowerCase().trim();
+        if (v === "visible" || v === "hidden" || v === "auto") {
+          if (prop === "overflow") { computed.overflow = v as any; computed.overflowX = v as any; computed.overflowY = v as any; }
+          else if (prop === "overflow-x") computed.overflowX = v as any;
+          else computed.overflowY = v as any;
+        }
+        return true;
+      }
+      case "display": computed.display = val.toLowerCase() as any; return true;
+      case "visibility": {
+        const v = val.toLowerCase().trim();
+        if (v === "visible" || v === "hidden") computed.visibility = v as any;
+        return true;
+      }
+      default: return false;
+    }
+  }
+
+  private applyBoxModel(computed: ComputedStyle, prop: string, val: string, containerWidth: number): boolean {
+    if (this.applyDimensions(computed, prop, val, containerWidth)) return true;
+    return this.applySpacingAndDisplay(computed, prop, val, containerWidth);
+  }
+
+  private applyBackground(computed: ComputedStyle, prop: string, val: string, _containerWidth: number): boolean {
+    switch (prop) {
+      case "background-color": computed.backgroundColor = parseCssColor(val); return true;
+      case "background-image": computed.backgroundImage = parseImageUrl(val); return true;
+      case "background-position": computed.backgroundPosition = val.trim(); return true;
+      case "background-size": computed.backgroundSize = val.trim(); return true;
+      case "background-repeat": {
+        const v = val.toLowerCase().trim();
+        if (v === "repeat" || v === "repeat-x" || v === "repeat-y" || v === "no-repeat") computed.backgroundRepeat = v;
+        return true;
+      }
+      case "background": parseAndApplyBackgroundShorthand(computed, val); return true;
+      default: return false;
+    }
+  }
+
+  private setBorderSide(computed: ComputedStyle, side: "Top" | "Right" | "Bottom" | "Left" | "All", parsed: { width?: number; style?: string; color?: ParsedColor }) {
+    if (side === "All") {
+      this.setBorderSide(computed, "Top", parsed);
+      this.setBorderSide(computed, "Right", parsed);
+      this.setBorderSide(computed, "Bottom", parsed);
+      this.setBorderSide(computed, "Left", parsed);
+      return;
+    }
+    if (parsed.width !== undefined) (computed as any)[`border${side}Width`] = parsed.width;
+    if (parsed.style !== undefined) (computed as any)[`border${side}Style`] = parsed.style;
+    if (parsed.color !== undefined) (computed as any)[`border${side}Color`] = parsed.color;
+  }
+
+  private applyBorderSides(computed: ComputedStyle, prop: string, val: string): boolean {
+    const sideMap: Record<string, "Top" | "Right" | "Bottom" | "Left" | "All"> = {
+      "border": "All",
+      "border-top": "Top",
+      "border-right": "Right",
+      "border-bottom": "Bottom",
+      "border-left": "Left"
+    };
+    const side = sideMap[prop];
+    if (!side) return false;
+    this.setBorderSide(computed, side, parseBorderShorthand(val));
+    return true;
+  }
+
+  private applyBorderProperties(computed: ComputedStyle, prop: string, val: string): boolean {
+    switch (prop) {
+      case "border-width": {
+        const [t, r, b, l] = parse4Values(val, (v) => parseCssUnit(v));
+        computed.borderTopWidth = t; computed.borderRightWidth = r; computed.borderBottomWidth = b; computed.borderLeftWidth = l;
+        return true;
+      }
+      case "border-top-width": computed.borderTopWidth = parseCssUnit(val); return true;
+      case "border-right-width": computed.borderRightWidth = parseCssUnit(val); return true;
+      case "border-bottom-width": computed.borderBottomWidth = parseCssUnit(val); return true;
+      case "border-left-width": computed.borderLeftWidth = parseCssUnit(val); return true;
+      case "border-color": {
+        const [t, r, b, l] = parse4Values(val, (v) => parseCssColor(v));
+        computed.borderTopColor = t; computed.borderRightColor = r; computed.borderBottomColor = b; computed.borderLeftColor = l;
+        return true;
+      }
+      case "border-top-color": computed.borderTopColor = parseCssColor(val); return true;
+      case "border-right-color": computed.borderRightColor = parseCssColor(val); return true;
+      case "border-bottom-color": computed.borderBottomColor = parseCssColor(val); return true;
+      case "border-left-color": computed.borderLeftColor = parseCssColor(val); return true;
+      case "border-style": {
+        const [t, r, b, l] = parse4Values(val, (v) => v.toLowerCase().trim());
+        computed.borderTopStyle = t; computed.borderRightStyle = r; computed.borderBottomStyle = b; computed.borderLeftStyle = l;
+        return true;
+      }
+      case "border-top-style": computed.borderTopStyle = val.toLowerCase().trim(); return true;
+      case "border-right-style": computed.borderRightStyle = val.toLowerCase().trim(); return true;
+      case "border-bottom-style": computed.borderBottomStyle = val.toLowerCase().trim(); return true;
+      case "border-left-style": computed.borderLeftStyle = val.toLowerCase().trim(); return true;
+      case "border-radius": {
+        const [tl, tr, br, bl] = parse4Values(val, (v) => parseCssUnit(v));
+        computed.borderTopLeftRadius = tl; computed.borderTopRightRadius = tr; computed.borderBottomRightRadius = br; computed.borderBottomLeftRadius = bl;
+        return true;
+      }
+      case "border-top-left-radius": computed.borderTopLeftRadius = parseCssUnit(val); return true;
+      case "border-top-right-radius": computed.borderTopRightRadius = parseCssUnit(val); return true;
+      case "border-bottom-right-radius": computed.borderBottomRightRadius = parseCssUnit(val); return true;
+      case "border-bottom-left-radius": computed.borderBottomLeftRadius = parseCssUnit(val); return true;
+      default: return false;
+    }
+  }
+
+  private applyBorder(computed: ComputedStyle, prop: string, val: string, _containerWidth: number): boolean {
+    if (this.applyBorderSides(computed, prop, val)) return true;
+    return this.applyBorderProperties(computed, prop, val);
+  }
+
+  private applyFlexBox(computed: ComputedStyle, prop: string, val: string, containerWidth: number): boolean {
+    switch (prop) {
+      case "flex-direction": computed.flexDirection = val.toLowerCase() as any; return true;
+      case "flex-wrap": {
+        const v = val.toLowerCase();
+        if (v === "wrap" || v === "wrap-reverse" || v === "nowrap") computed.flexWrap = v as any;
+        return true;
+      }
+      case "flex-flow": {
+        const parts = val.trim().toLowerCase().split(/\s+/);
+        for (const part of parts) {
+          if (part === "row" || part === "column" || part === "row-reverse" || part === "column-reverse") computed.flexDirection = part as any;
+          else if (part === "nowrap" || part === "wrap" || part === "wrap-reverse") computed.flexWrap = part as any;
+        }
+        return true;
+      }
+      case "justify-content": computed.justifyContent = val.toLowerCase() as any; return true;
+      case "align-items": computed.alignItems = val.toLowerCase() as any; return true;
+      case "flex-grow": {
+        const p = Number.parseFloat(val);
+        if (!Number.isNaN(p)) computed.flexGrow = p;
+        return true;
+      }
+      case "flex-shrink": {
+        const p = Number.parseFloat(val);
+        if (!Number.isNaN(p)) computed.flexShrink = p;
+        return true;
+      }
+      case "flex-basis": computed.flexBasis = val === "auto" ? "auto" : parseCssUnit(val, containerWidth); return true;
+      case "flex": this.applyFlexShorthand(computed, val, containerWidth); return true;
+      default: return false;
+    }
+  }
+
+  private applyGridSystem(computed: ComputedStyle, prop: string, val: string, containerWidth: number): boolean {
+    switch (prop) {
+      case "gap":
+      case "grid-gap": {
+        const parts = val.trim().split(/\s+/);
+        if (parts.length === 2 && parts[0] && parts[1]) { computed.rowGap = parseCssUnit(parts[0], containerWidth); computed.columnGap = parseCssUnit(parts[1], containerWidth); }
+        else if (parts[0]) { const g = parseCssUnit(parts[0], containerWidth); computed.rowGap = g; computed.columnGap = g; }
+        return true;
+      }
+      case "row-gap":
+      case "grid-row-gap": computed.rowGap = parseCssUnit(val, containerWidth); return true;
+      case "column-gap":
+      case "grid-column-gap": computed.columnGap = parseCssUnit(val, containerWidth); return true;
+      case "grid-template-columns": computed.gridTemplateColumns = val.trim(); return true;
+      case "grid-template-rows": computed.gridTemplateRows = val.trim(); return true;
+      case "grid-column": {
+        const res = applyGridLineShorthand(val);
+        computed.gridColumnStart = res.start; computed.gridColumnEnd = res.end;
+        return true;
+      }
+      case "grid-row": {
+        const res = applyGridLineShorthand(val);
+        computed.gridRowStart = res.start; computed.gridRowEnd = res.end;
+        return true;
+      }
+      case "grid-column-start": computed.gridColumnStart = parseGridLineVal(val); return true;
+      case "grid-column-end": computed.gridColumnEnd = parseGridLineVal(val); return true;
+      case "grid-row-start": computed.gridRowStart = parseGridLineVal(val); return true;
+      case "grid-row-end": computed.gridRowEnd = parseGridLineVal(val); return true;
+      case "justify-items": computed.justifyItems = val.toLowerCase() as any; return true;
+      case "justify-self": computed.justifySelf = val.toLowerCase() as any; return true;
+      case "align-self": computed.alignSelf = val.toLowerCase() as any; return true;
+      default: return false;
+    }
+  }
+
+  private applyFlexGrid(computed: ComputedStyle, prop: string, val: string, containerWidth: number): boolean {
+    if (this.applyFlexBox(computed, prop, val, containerWidth)) return true;
+    return this.applyGridSystem(computed, prop, val, containerWidth);
+  }
+
+  private applyPositioning(computed: ComputedStyle, prop: string, val: string, containerWidth: number): boolean {
+    switch (prop) {
+      case "position": {
+        const v = val.toLowerCase().trim();
+        if (v === "static" || v === "relative" || v === "absolute" || v === "fixed") computed.position = v as any;
+        return true;
+      }
+      case "z-index": {
+        const v = val.toLowerCase().trim();
+        if (v === "auto") computed.zIndex = "auto";
+        else {
+          const parsed = Number.parseInt(v, 10);
+          computed.zIndex = Number.isNaN(parsed) ? "auto" : parsed;
+        }
+        return true;
+      }
+      case "float": {
+        const v = val.toLowerCase().trim();
+        if (v === "none" || v === "left" || v === "right") computed.float = v as any;
+        return true;
+      }
+      case "clear": {
+        const v = val.toLowerCase().trim();
+        if (v === "none" || v === "left" || v === "right" || v === "both") computed.clear = v as any;
+        return true;
+      }
+      case "top": computed.top = parsePositionOffset(val, containerWidth); return true;
+      case "right": computed.right = parsePositionOffset(val, containerWidth); return true;
+      case "bottom": computed.bottom = parsePositionOffset(val, containerWidth); return true;
+      case "left": computed.left = parsePositionOffset(val, containerWidth); return true;
+      default: return false;
+    }
+  }
+
+  private applyPagination(computed: ComputedStyle, prop: string, val: string): boolean {
+    switch (prop) {
+      case "break-before":
+      case "page-break-before": {
+        const v = val.toLowerCase().trim();
+        if (v === "page" || v === "always") { computed.breakBefore = "page"; computed.pageBreakBefore = "always"; }
+        else if (v === "auto") { computed.breakBefore = "auto"; computed.pageBreakBefore = "auto"; }
+        return true;
+      }
+      case "break-after":
+      case "page-break-after": {
+        const v = val.toLowerCase().trim();
+        if (v === "page" || v === "always") { computed.breakAfter = "page"; computed.pageBreakAfter = "always"; }
+        else if (v === "auto") { computed.breakAfter = "auto"; computed.pageBreakAfter = "auto"; }
+        return true;
+      }
+      case "break-inside":
+      case "page-break-inside": {
+        const v = val.toLowerCase().trim();
+        if (v === "avoid") { computed.breakInside = "avoid"; computed.pageBreakInside = "avoid"; }
+        else if (v === "auto") { computed.breakInside = "auto"; computed.pageBreakInside = "auto"; }
+        return true;
+      }
+      default: return false;
+    }
+  }
+
+  private applyLayoutPage(computed: ComputedStyle, prop: string, val: string, containerWidth: number): boolean {
+    if (this.applyPositioning(computed, prop, val, containerWidth)) return true;
+    return this.applyPagination(computed, prop, val);
+  }
+
+  private applyDeclaration(computed: ComputedStyle, prop: string, rawVal: string, containerWidth: number): void {
+    if (prop.startsWith("--")) return;
+
+    try {
+      const val = this.resolveCssVariables(rawVal, computed.customProperties);
+      if (this.applyTypography(computed, prop, val, containerWidth)) return;
+      if (this.applyBoxModel(computed, prop, val, containerWidth)) return;
+      if (this.applyBackground(computed, prop, val, containerWidth)) return;
+      if (this.applyBorder(computed, prop, val, containerWidth)) return;
+      if (this.applyFlexGrid(computed, prop, val, containerWidth)) return;
+      this.applyLayoutPage(computed, prop, val, containerWidth);
+    } catch {
+      // Ignore invalid declaration and preserve default
+    }
+  }
+
   private applyDeclarations(
     computed: ComputedStyle,
     decls: Record<string, string>,
     containerWidth: number,
   ): void {
-    // 1. Collect and resolve custom CSS property definitions first (--custom-prop)
     for (const [prop, rawVal] of Object.entries(decls)) {
       if (prop.startsWith("--")) {
-        const resolved = this.resolveCssVariables(
+        computed.customProperties[prop] = this.resolveCssVariables(
           rawVal,
           computed.customProperties,
         );
-        computed.customProperties[prop] = resolved;
       }
     }
 
-    // 2. Resolve CSS variables for standard properties
     for (const [prop, rawVal] of Object.entries(decls)) {
-      if (prop.startsWith("--")) continue;
+      this.applyDeclaration(computed, prop, rawVal, containerWidth);
+    }
+  }
 
-      const val = this.resolveCssVariables(rawVal, computed.customProperties);
+  private applyFlexKeyword(computed: ComputedStyle, keyword: string): boolean {
+    if (keyword === "none") {
+      computed.flexGrow = 0;
+      computed.flexShrink = 0;
+      computed.flexBasis = "auto";
+      return true;
+    }
+    if (keyword === "auto") {
+      computed.flexGrow = 1;
+      computed.flexShrink = 1;
+      computed.flexBasis = "auto";
+      return true;
+    }
+    if (keyword === "initial") {
+      computed.flexGrow = 0;
+      computed.flexShrink = 1;
+      computed.flexBasis = "auto";
+      return true;
+    }
+    return false;
+  }
 
-      if (prop === "display") {
-        computed.display = val.toLowerCase() as DisplayType;
-      } else if (prop === "color") {
-        computed.color = parseCssColor(val);
-      } else if (prop === "background-color") {
-        computed.backgroundColor = parseCssColor(val);
-      } else if (prop === "background-image") {
-        computed.backgroundImage = parseImageUrl(val);
-      } else if (prop === "background-position") {
-        computed.backgroundPosition = val.trim();
-      } else if (prop === "background-size") {
-        computed.backgroundSize = val.trim();
-      } else if (prop === "background-repeat") {
-        const v = val.toLowerCase().trim();
-        if (
-          v === "repeat" ||
-          v === "repeat-x" ||
-          v === "repeat-y" ||
-          v === "no-repeat"
-        ) {
-          computed.backgroundRepeat = v;
-        }
-      } else if (prop === "background") {
-        parseAndApplyBackgroundShorthand(computed, val);
-      } else if (prop === "font-size") {
-        computed.fontSize = parseCssUnit(val, computed.fontSize);
-      } else if (prop === "font-family") {
-        computed.fontFamily = val.trim();
-      } else if (prop === "font-weight") {
-        const fw = val.toLowerCase().trim();
-        if (fw === "bold") computed.fontWeight = 700;
-        else if (fw === "normal") computed.fontWeight = 400;
-        else {
-          const num = parseInt(fw, 10);
-          computed.fontWeight = isNaN(num) ? fw : num;
-        }
-      } else if (prop === "font-style") {
-        computed.fontStyle =
-          val.includes("italic") || val.includes("oblique")
-            ? "italic"
-            : "normal";
-      } else if (prop === "line-height") {
-        const v = val.toLowerCase().trim();
-        if (v === "normal") {
-          computed.lineHeight = 1.2;
-        } else {
-          const parsed = parseFloat(v);
-          const hasUnit =
-            v.endsWith("px") ||
-            v.endsWith("pt") ||
-            v.endsWith("mm") ||
-            v.endsWith("cm") ||
-            v.endsWith("in") ||
-            v.endsWith("%");
-          if (!isNaN(parsed) && !hasUnit) {
-            computed.lineHeight = parsed;
-          } else {
-            computed.lineHeight = parseCssUnit(val);
-          }
-        }
-      } else if (prop === "letter-spacing") {
-        const v = val.toLowerCase().trim();
-        computed.letterSpacing = v === "normal" ? 0 : parseCssUnit(val);
-      } else if (prop === "word-spacing") {
-        const v = val.toLowerCase().trim();
-        computed.wordSpacing = v === "normal" ? 0 : parseCssUnit(val);
-      } else if (prop === "text-transform") {
-        const v = val.toLowerCase().trim();
-        if (
-          v === "none" ||
-          v === "uppercase" ||
-          v === "lowercase" ||
-          v === "capitalize"
-        ) {
-          computed.textTransform = v;
-        }
-      } else if (prop === "text-indent") {
-        computed.textIndent = parseCssUnit(val, containerWidth);
-      } else if (prop === "vertical-align") {
-        const v = val.toLowerCase().trim();
-        if (
-          v === "baseline" ||
-          v === "top" ||
-          v === "middle" ||
-          v === "bottom"
-        ) {
-          computed.verticalAlign = v;
-        } else {
-          computed.verticalAlign = parseCssUnit(val);
-        }
-      } else if (prop === "text-overflow") {
-        const v = val.toLowerCase().trim();
-        if (v === "clip" || v === "ellipsis") {
-          computed.textOverflow = v;
-        }
-      } else if (prop === "text-decoration") {
-        const v = val.toLowerCase().trim();
-        if (
-          v === "none" ||
-          v === "underline" ||
-          v === "line-through" ||
-          v === "overline"
-        ) {
-          computed.textDecoration = v;
-        }
-      } else if (prop === "white-space") {
-        const v = val.toLowerCase().trim();
-        if (
-          v === "normal" ||
-          v === "nowrap" ||
-          v === "pre" ||
-          v === "pre-wrap" ||
-          v === "pre-line"
-        ) {
-          computed.whiteSpace = v;
-        }
-      } else if (prop === "visibility") {
-        const v = val.toLowerCase().trim();
-        if (v === "visible" || v === "hidden") {
-          computed.visibility = v;
-        }
-      } else if (prop === "text-align") {
-        computed.textAlign = val as "left" | "center" | "right" | "justify";
-      } else if (prop === "width") {
-        computed.width =
-          val === "auto" ? "auto" : parseCssUnit(val, containerWidth);
-      } else if (prop === "height") {
-        computed.height = val === "auto" ? "auto" : parseCssUnit(val);
-      } else if (prop === "min-width") {
-        const v = val.toLowerCase().trim();
-        computed.minWidth =
-          v === "none" || v === "auto"
-            ? "none"
-            : parseCssUnit(val, containerWidth);
-      } else if (prop === "max-width") {
-        const v = val.toLowerCase().trim();
-        computed.maxWidth =
-          v === "none" || v === "auto"
-            ? "none"
-            : parseCssUnit(val, containerWidth);
-      } else if (prop === "min-height") {
-        const v = val.toLowerCase().trim();
-        computed.minHeight =
-          v === "none" || v === "auto" ? "none" : parseCssUnit(val);
-      } else if (prop === "max-height") {
-        const v = val.toLowerCase().trim();
-        computed.maxHeight =
-          v === "none" || v === "auto" ? "none" : parseCssUnit(val);
-      } else if (prop === "overflow") {
-        const v = val.toLowerCase().trim();
-        if (v === "visible" || v === "hidden" || v === "auto") {
-          computed.overflow = v;
-          computed.overflowX = v;
-          computed.overflowY = v;
-        }
-      } else if (prop === "overflow-x") {
-        const v = val.toLowerCase().trim();
-        if (v === "visible" || v === "hidden" || v === "auto") {
-          computed.overflowX = v;
-        }
-      } else if (prop === "overflow-y") {
-        const v = val.toLowerCase().trim();
-        if (v === "visible" || v === "hidden" || v === "auto") {
-          computed.overflowY = v;
-        }
-      } else if (prop === "margin-top")
-        computed.marginTop = parseCssUnit(val, containerWidth);
-      else if (prop === "margin-right")
-        computed.marginRight = parseCssUnit(val, containerWidth);
-      else if (prop === "margin-bottom")
-        computed.marginBottom = parseCssUnit(val, containerWidth);
-      else if (prop === "margin-left")
-        computed.marginLeft = parseCssUnit(val, containerWidth);
-      else if (prop === "padding-top")
-        computed.paddingTop = parseCssUnit(val, containerWidth);
-      else if (prop === "padding-right")
-        computed.paddingRight = parseCssUnit(val, containerWidth);
-      else if (prop === "padding-bottom")
-        computed.paddingBottom = parseCssUnit(val, containerWidth);
-      else if (prop === "padding-left")
-        computed.paddingLeft = parseCssUnit(val, containerWidth);
-      else if (prop === "border") {
-        const parsed = parseBorderShorthand(val);
-        if (parsed.width !== undefined) {
-          computed.borderTopWidth = parsed.width;
-          computed.borderRightWidth = parsed.width;
-          computed.borderBottomWidth = parsed.width;
-          computed.borderLeftWidth = parsed.width;
-        }
-        if (parsed.style !== undefined) {
-          computed.borderTopStyle = parsed.style;
-          computed.borderRightStyle = parsed.style;
-          computed.borderBottomStyle = parsed.style;
-          computed.borderLeftStyle = parsed.style;
-        }
-        if (parsed.color !== undefined) {
-          computed.borderTopColor = parsed.color;
-          computed.borderRightColor = parsed.color;
-          computed.borderBottomColor = parsed.color;
-          computed.borderLeftColor = parsed.color;
-        }
-      } else if (prop === "border-top") {
-        const parsed = parseBorderShorthand(val);
-        if (parsed.width !== undefined) computed.borderTopWidth = parsed.width;
-        if (parsed.style !== undefined) computed.borderTopStyle = parsed.style;
-        if (parsed.color !== undefined) computed.borderTopColor = parsed.color;
-      } else if (prop === "border-right") {
-        const parsed = parseBorderShorthand(val);
-        if (parsed.width !== undefined)
-          computed.borderRightWidth = parsed.width;
-        if (parsed.style !== undefined)
-          computed.borderRightStyle = parsed.style;
-        if (parsed.color !== undefined)
-          computed.borderRightColor = parsed.color;
-      } else if (prop === "border-bottom") {
-        const parsed = parseBorderShorthand(val);
-        if (parsed.width !== undefined)
-          computed.borderBottomWidth = parsed.width;
-        if (parsed.style !== undefined)
-          computed.borderBottomStyle = parsed.style;
-        if (parsed.color !== undefined)
-          computed.borderBottomColor = parsed.color;
-      } else if (prop === "border-left") {
-        const parsed = parseBorderShorthand(val);
-        if (parsed.width !== undefined) computed.borderLeftWidth = parsed.width;
-        if (parsed.style !== undefined) computed.borderLeftStyle = parsed.style;
-        if (parsed.color !== undefined) computed.borderLeftColor = parsed.color;
-      } else if (prop === "border-width") {
-        const [t, r, b, l] = parse4Values(val, (v) => parseCssUnit(v));
-        computed.borderTopWidth = t;
-        computed.borderRightWidth = r;
-        computed.borderBottomWidth = b;
-        computed.borderLeftWidth = l;
-      } else if (prop === "border-top-width") {
-        computed.borderTopWidth = parseCssUnit(val);
-      } else if (prop === "border-right-width") {
-        computed.borderRightWidth = parseCssUnit(val);
-      } else if (prop === "border-bottom-width") {
-        computed.borderBottomWidth = parseCssUnit(val);
-      } else if (prop === "border-left-width") {
-        computed.borderLeftWidth = parseCssUnit(val);
-      } else if (prop === "border-color") {
-        const [t, r, b, l] = parse4Values(val, (v) => parseCssColor(v));
-        computed.borderTopColor = t;
-        computed.borderRightColor = r;
-        computed.borderBottomColor = b;
-        computed.borderLeftColor = l;
-      } else if (prop === "border-top-color") {
-        computed.borderTopColor = parseCssColor(val);
-      } else if (prop === "border-right-color") {
-        computed.borderRightColor = parseCssColor(val);
-      } else if (prop === "border-bottom-color") {
-        computed.borderBottomColor = parseCssColor(val);
-      } else if (prop === "border-left-color") {
-        computed.borderLeftColor = parseCssColor(val);
-      } else if (prop === "border-style") {
-        const [t, r, b, l] = parse4Values(val, (v) => v.toLowerCase().trim());
-        computed.borderTopStyle = t;
-        computed.borderRightStyle = r;
-        computed.borderBottomStyle = b;
-        computed.borderLeftStyle = l;
-      } else if (prop === "border-top-style") {
-        computed.borderTopStyle = val.toLowerCase().trim();
-      } else if (prop === "border-right-style") {
-        computed.borderRightStyle = val.toLowerCase().trim();
-      } else if (prop === "border-bottom-style") {
-        computed.borderBottomStyle = val.toLowerCase().trim();
-      } else if (prop === "border-left-style") {
-        computed.borderLeftStyle = val.toLowerCase().trim();
-      } else if (prop === "border-radius") {
-        const [tl, tr, br, bl] = parse4Values(val, (v) => parseCssUnit(v));
-        computed.borderTopLeftRadius = tl;
-        computed.borderTopRightRadius = tr;
-        computed.borderBottomRightRadius = br;
-        computed.borderBottomLeftRadius = bl;
-      } else if (prop === "border-top-left-radius") {
-        computed.borderTopLeftRadius = parseCssUnit(val);
-      } else if (prop === "border-top-right-radius") {
-        computed.borderTopRightRadius = parseCssUnit(val);
-      } else if (prop === "border-bottom-right-radius") {
-        computed.borderBottomRightRadius = parseCssUnit(val);
-      } else if (prop === "border-bottom-left-radius") {
-        computed.borderBottomLeftRadius = parseCssUnit(val);
-      } else if (prop === "break-before" || prop === "page-break-before") {
-        const v = val.toLowerCase().trim();
-        if (v === "page" || v === "always") {
-          computed.breakBefore = "page";
-          computed.pageBreakBefore = "always";
-        } else if (v === "auto") {
-          computed.breakBefore = "auto";
-          computed.pageBreakBefore = "auto";
-        }
-      } else if (prop === "break-after" || prop === "page-break-after") {
-        const v = val.toLowerCase().trim();
-        if (v === "page" || v === "always") {
-          computed.breakAfter = "page";
-          computed.pageBreakAfter = "always";
-        } else if (v === "auto") {
-          computed.breakAfter = "auto";
-          computed.pageBreakAfter = "auto";
-        }
-      } else if (prop === "break-inside" || prop === "page-break-inside") {
-        const v = val.toLowerCase().trim();
-        if (v === "avoid") {
-          computed.breakInside = "avoid";
-          computed.pageBreakInside = "avoid";
-        } else if (v === "auto") {
-          computed.breakInside = "auto";
-          computed.pageBreakInside = "auto";
-        }
-      } else if (prop === "position") {
-        const v = val.toLowerCase().trim();
-        if (
-          v === "static" ||
-          v === "relative" ||
-          v === "absolute" ||
-          v === "fixed"
-        ) {
-          computed.position = v;
-        }
-      } else if (prop === "z-index") {
-        const v = val.toLowerCase().trim();
-        if (v === "auto") {
-          computed.zIndex = "auto";
-        } else {
-          const parsed = parseInt(v, 10);
-          computed.zIndex = isNaN(parsed) ? "auto" : parsed;
-        }
-      } else if (prop === "float") {
-        const v = val.toLowerCase().trim();
-        if (v === "none" || v === "left" || v === "right") {
-          computed.float = v;
-        }
-      } else if (prop === "clear") {
-        const v = val.toLowerCase().trim();
-        if (v === "none" || v === "left" || v === "right" || v === "both") {
-          computed.clear = v;
-        }
-      } else if (prop === "top") {
-        computed.top = parsePositionOffset(val, containerWidth);
-      } else if (prop === "right") {
-        computed.right = parsePositionOffset(val, containerWidth);
-      } else if (prop === "bottom") {
-        computed.bottom = parsePositionOffset(val, containerWidth);
-      } else if (prop === "left") {
-        computed.left = parsePositionOffset(val, containerWidth);
-      } else if (prop === "flex-direction")
-        computed.flexDirection = val.toLowerCase() as any;
-      else if (prop === "flex-wrap") {
-        const v = val.toLowerCase();
-        if (v === "wrap" || v === "wrap-reverse" || v === "nowrap") {
-          computed.flexWrap = v as any;
-        }
-      } else if (prop === "flex-flow") {
-        const parts = val.trim().toLowerCase().split(/\s+/);
-        for (const part of parts) {
-          if (
-            part === "row" ||
-            part === "column" ||
-            part === "row-reverse" ||
-            part === "column-reverse"
-          ) {
-            computed.flexDirection = part as any;
-          } else if (
-            part === "nowrap" ||
-            part === "wrap" ||
-            part === "wrap-reverse"
-          ) {
-            computed.flexWrap = part as any;
-          }
-        }
-      } else if (prop === "justify-content")
-        computed.justifyContent = val.toLowerCase() as any;
-      else if (prop === "align-items")
-        computed.alignItems = val.toLowerCase() as any;
-      else if (prop === "gap" || prop === "grid-gap") {
-        const parts = val.trim().split(/\s+/);
-        if (parts.length === 2 && parts[0] && parts[1]) {
-          computed.rowGap = parseCssUnit(parts[0], containerWidth);
-          computed.columnGap = parseCssUnit(parts[1], containerWidth);
-        } else if (parts[0]) {
-          const g = parseCssUnit(parts[0], containerWidth);
-          computed.rowGap = g;
-          computed.columnGap = g;
-        }
-      } else if (prop === "row-gap" || prop === "grid-row-gap") {
-        computed.rowGap = parseCssUnit(val, containerWidth);
-      } else if (prop === "column-gap" || prop === "grid-column-gap") {
-        computed.columnGap = parseCssUnit(val, containerWidth);
-      } else if (prop === "flex-grow") {
-        const p = parseFloat(val);
-        if (!isNaN(p)) computed.flexGrow = p;
-      } else if (prop === "flex-shrink") {
-        const p = parseFloat(val);
-        if (!isNaN(p)) computed.flexShrink = p;
-      } else if (prop === "flex-basis") {
-        computed.flexBasis =
-          val === "auto" ? "auto" : parseCssUnit(val, containerWidth);
-      } else if (prop === "flex") {
-        this.applyFlexShorthand(computed, val, containerWidth);
-      } else if (prop === "grid-template-columns") {
-        computed.gridTemplateColumns = val.trim();
-      } else if (prop === "grid-template-rows") {
-        computed.gridTemplateRows = val.trim();
-      } else if (prop === "grid-column") {
-        const res = applyGridLineShorthand(val);
-        computed.gridColumnStart = res.start;
-        computed.gridColumnEnd = res.end;
-      } else if (prop === "grid-row") {
-        const res = applyGridLineShorthand(val);
-        computed.gridRowStart = res.start;
-        computed.gridRowEnd = res.end;
-      } else if (prop === "grid-column-start") {
-        computed.gridColumnStart = parseGridLineVal(val);
-      } else if (prop === "grid-column-end") {
-        computed.gridColumnEnd = parseGridLineVal(val);
-      } else if (prop === "grid-row-start") {
-        computed.gridRowStart = parseGridLineVal(val);
-      } else if (prop === "grid-row-end") {
-        computed.gridRowEnd = parseGridLineVal(val);
-      } else if (prop === "justify-items") {
-        computed.justifyItems = val.toLowerCase() as any;
-      } else if (prop === "justify-self") {
-        computed.justifySelf = val.toLowerCase() as any;
-      } else if (prop === "align-self") {
-        computed.alignSelf = val.toLowerCase() as any;
-      }
+  private applyFlexOnePart(computed: ComputedStyle, p0: string, containerWidth: number): void {
+    const num = Number.parseFloat(p0);
+    if (!Number.isNaN(num) && !/[a-z%]/i.exec(p0)) {
+      computed.flexGrow = num;
+      computed.flexShrink = 1;
+      computed.flexBasis = 0;
+    } else {
+      computed.flexBasis = parseCssUnit(p0, containerWidth);
+    }
+  }
+
+  private applyFlexTwoParts(computed: ComputedStyle, p0: string, p1: string, containerWidth: number): void {
+    const g = Number.parseFloat(p0);
+    if (!Number.isNaN(g)) computed.flexGrow = g;
+    const num2 = Number.parseFloat(p1);
+    if (!Number.isNaN(num2) && !/[a-z%]/i.exec(p1)) computed.flexShrink = num2;
+    else computed.flexBasis = parseCssUnit(p1, containerWidth);
+  }
+
+  private applyFlexThreeParts(computed: ComputedStyle, p0: string, p1: string, p2: string, containerWidth: number): void {
+    const g = Number.parseFloat(p0);
+    const s = Number.parseFloat(p1);
+    if (!Number.isNaN(g)) computed.flexGrow = g;
+    if (!Number.isNaN(s)) computed.flexShrink = s;
+    computed.flexBasis = p2 === "auto" ? "auto" : parseCssUnit(p2, containerWidth);
+  }
+
+  private applyFlexParts(computed: ComputedStyle, parts: string[], containerWidth: number): void {
+    const [p0, p1, p2] = parts;
+    if (parts.length === 1 && p0) {
+      this.applyFlexOnePart(computed, p0, containerWidth);
+    } else if (parts.length === 2 && p0 && p1) {
+      this.applyFlexTwoParts(computed, p0, p1, containerWidth);
+    } else if (parts.length >= 3 && p0 && p1 && p2) {
+      this.applyFlexThreeParts(computed, p0, p1, p2, containerWidth);
     }
   }
 
@@ -800,61 +799,16 @@ export class CascadeEngine {
     containerWidth: number,
   ): void {
     const trimmed = val.trim().toLowerCase();
-    if (trimmed === "none") {
-      computed.flexGrow = 0;
-      computed.flexShrink = 0;
-      computed.flexBasis = "auto";
-      return;
-    }
-    if (trimmed === "auto") {
-      computed.flexGrow = 1;
-      computed.flexShrink = 1;
-      computed.flexBasis = "auto";
-      return;
-    }
-    if (trimmed === "initial") {
-      computed.flexGrow = 0;
-      computed.flexShrink = 1;
-      computed.flexBasis = "auto";
-      return;
-    }
-
-    const parts = trimmed.split(/\s+/);
-    if (parts.length === 1 && parts[0]) {
-      const num = parseFloat(parts[0]);
-      if (!isNaN(num) && !parts[0].match(/[a-z%]/i)) {
-        computed.flexGrow = num;
-        computed.flexShrink = 1;
-        computed.flexBasis = 0;
-      } else {
-        computed.flexBasis = parseCssUnit(parts[0], containerWidth);
-      }
-    } else if (parts.length === 2 && parts[0] && parts[1]) {
-      const g = parseFloat(parts[0]);
-      if (!isNaN(g)) computed.flexGrow = g;
-
-      const num2 = parseFloat(parts[1]);
-      if (!isNaN(num2) && !parts[1].match(/[a-z%]/i)) {
-        computed.flexShrink = num2;
-      } else {
-        computed.flexBasis = parseCssUnit(parts[1], containerWidth);
-      }
-    } else if (parts.length >= 3 && parts[0] && parts[1] && parts[2]) {
-      const g = parseFloat(parts[0]);
-      const s = parseFloat(parts[1]);
-      if (!isNaN(g)) computed.flexGrow = g;
-      if (!isNaN(s)) computed.flexShrink = s;
-      computed.flexBasis =
-        parts[2] === "auto" ? "auto" : parseCssUnit(parts[2], containerWidth);
-    }
+    if (this.applyFlexKeyword(computed, trimmed)) return;
+    this.applyFlexParts(computed, trimmed.split(/\s+/), containerWidth);
   }
 }
 
 function parseGridLineVal(val: string): string | number {
   const trimmed = val.trim().toLowerCase();
   if (trimmed.startsWith("span")) return trimmed;
-  const num = parseInt(trimmed, 10);
-  return isNaN(num) ? "auto" : num;
+  const num = Number.parseInt(trimmed, 10);
+  return Number.isNaN(num) ? "auto" : num;
 }
 
 function applyGridLineShorthand(val: string): {
@@ -880,7 +834,7 @@ function applyGridLineShorthand(val: string): {
 export function parsePositionOffset(
   val: string,
   containerWidth?: number,
-): number | string | "auto" {
+): number | string {
   const trimmed = val.trim().toLowerCase();
   if (trimmed === "auto" || trimmed === "initial") return "auto";
   if (trimmed.endsWith("%")) return trimmed;
@@ -888,14 +842,14 @@ export function parsePositionOffset(
 }
 
 export function resolveOffset(
-  offset: number | string | "auto",
+  offset: number | string,
   containerSize: number,
 ): number | "auto" {
   if (offset === "auto") return "auto";
   if (typeof offset === "number") return offset;
   if (typeof offset === "string" && offset.endsWith("%")) {
-    const pct = parseFloat(offset.slice(0, -1));
-    return isNaN(pct) ? 0 : (pct / 100) * containerSize;
+    const pct = Number.parseFloat(offset.slice(0, -1));
+    return Number.isNaN(pct) ? 0 : (pct / 100) * containerSize;
   }
   if (typeof offset === "string") {
     return parseCssUnit(offset, containerSize);
@@ -906,22 +860,18 @@ export function resolveOffset(
 function parseImageUrl(val: string): string | null {
   const trimmed = val.trim();
   if (trimmed === "none" || !trimmed) return null;
-  const match = trimmed.match(/url\s*\(\s*(['"]?)(.*?)\1\s*\)/i);
-  if (match && match[2]) {
-    return match[2].trim();
+  const match = /url\(([^)]+)\)/i.exec(trimmed);
+  if (match?.[1]) {
+    let url = match[1].trim();
+    if ((url.startsWith('"') && url.endsWith('"')) || (url.startsWith("'") && url.endsWith("'"))) {
+      url = url.slice(1, -1);
+    }
+    return url.trim();
   }
   return null;
 }
 
-function parseAndApplyBackgroundShorthand(
-  computed: ComputedStyle,
-  val: string,
-): void {
-  const img = parseImageUrl(val);
-  if (img) {
-    computed.backgroundImage = img;
-  }
-
+function extractBackgroundSize(computed: ComputedStyle, val: string): void {
   if (val.includes("/")) {
     const slashParts = val.split("/");
     if (slashParts[1]) {
@@ -929,36 +879,49 @@ function parseAndApplyBackgroundShorthand(
       if (sizeToken) computed.backgroundSize = sizeToken;
     }
   }
+}
+
+function applyBackgroundPart(computed: ComputedStyle, part: string): void {
+  const lower = part.toLowerCase();
+  if (["repeat", "repeat-x", "repeat-y", "no-repeat"].includes(lower)) {
+    computed.backgroundRepeat = lower as any;
+  } else if (["left", "right", "center", "top", "bottom"].includes(lower)) {
+    computed.backgroundPosition = lower;
+  } else {
+    const color = parseCssColor(part);
+    if (
+      color &&
+      (part.startsWith("#") ||
+        part.startsWith("rgb") ||
+        part.startsWith("hsl") ||
+        NAMED_COLORS[lower] ||
+        lower === "transparent")
+    ) {
+      computed.backgroundColor = color;
+    }
+  }
+}
+
+function parseAndApplyBackgroundShorthand(
+  computed: ComputedStyle,
+  val: string,
+): void {
+  const img = parseImageUrl(val);
+  if (img) computed.backgroundImage = img;
+
+  extractBackgroundSize(computed, val);
 
   const parts = val
-    .replace(/url\s*\([^)]*\)/gi, "")
-    .replace(/\/.*$/g, "")
+    .replace(/url\([^)]*\)/gi, "")
+    .replace(/\/[^/]*$/g, "")
     .split(/[\s,]+/)
     .map((p) => p.replace(/;$/, "").trim())
     .filter((p) => p.length > 0);
 
   for (const part of parts) {
-    const lower = part.toLowerCase();
-    if (["repeat", "repeat-x", "repeat-y", "no-repeat"].includes(lower)) {
-      computed.backgroundRepeat = lower as any;
-    } else if (["left", "right", "center", "top", "bottom"].includes(lower)) {
-      computed.backgroundPosition = lower;
-    } else {
-      const color = parseCssColor(part);
-      if (
-        color &&
-        (part.startsWith("#") ||
-          part.startsWith("rgb") ||
-          part.startsWith("hsl") ||
-          NAMED_COLORS[lower] ||
-          lower === "transparent")
-      ) {
-        computed.backgroundColor = color;
-      }
-    }
+    applyBackgroundPart(computed, part);
   }
 }
-
 function parseBorderShorthand(val: string): {
   width?: number;
   style?: string;
@@ -969,7 +932,7 @@ function parseBorderShorthand(val: string): {
     .trim()
     .split(/\s+/)
     .filter((p) => p.length > 0);
-  const styles = [
+  const styles = new Set([
     "none",
     "solid",
     "dashed",
@@ -979,11 +942,11 @@ function parseBorderShorthand(val: string): {
     "ridge",
     "inset",
     "outset",
-  ];
+  ]);
 
   for (const part of parts) {
     const lower = part.toLowerCase();
-    if (styles.includes(lower)) {
+    if (styles.has(lower)) {
       result.style = lower;
     } else if (
       lower.endsWith("px") ||
@@ -994,7 +957,7 @@ function parseBorderShorthand(val: string): {
       lower === "thin" ||
       lower === "medium" ||
       lower === "thick" ||
-      (!isNaN(parseFloat(lower)) &&
+      (!Number.isNaN(Number.parseFloat(lower)) &&
         !lower.startsWith("#") &&
         !lower.startsWith("rgb") &&
         !lower.startsWith("hsl"))

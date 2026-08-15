@@ -18,9 +18,9 @@ Lightweight, dependency-free HTML & CSS to PDF engine for Node.js, designed for 
 `html-pdf-engine` is **not a browser runtime** (such as Chromium, WebKit, or Firefox). It is designed specifically for fast, deterministic server-side document rendering.
 
 - **No Browser Process**: Generates PDF binary streams natively without invoking Chromium or external subprocesses.
-- **No JavaScript Execution**: `<script>` tags are parsed and hidden to guarantee security and deterministic execution.
-- **No Remote Network Requests**: Does not make network requests for remote stylesheets (`<link href="http...">`), images (`<img src="http...">`), or web fonts (`@font-face`). All external assets are registered explicitly via option parameters.
-- **Targeted CSS Subset**: Implements a practical subset of CSS tailored for structured business layouts (Block, Inline, Table, Flexbox with wrapping, CSS Grid, and Practical CSS Positioning). Unsupported browser-specific CSS rules should not be expected to render identically to full browser engines.
+- **No JavaScript Execution**: `<script>` tags are parsed and visually hidden to guarantee security and deterministic execution.
+- **Default Offline Security & Opt-In Asset Resolution**: By default, the engine makes zero implicit network requests for external stylesheets, images, or web fonts. Applications can explicitly configure an opt-in `AssetResolver` (including the built-in `createNetworkAssetResolver()`) with SSRF protection, timeout, and byte limits.
+- **Targeted Document CSS Subset**: Implements a CSS subset tailored for structured business layouts (Block, Inline, Table, Flexbox with wrapping, CSS Grid, CSS Custom Properties / `var()`, Media Queries, `position: relative / absolute / fixed`, and `z-index` paint ordering).
 
 ---
 
@@ -28,17 +28,19 @@ Lightweight, dependency-free HTML & CSS to PDF engine for Node.js, designed for 
 
 - **Zero Runtime Dependencies**: Built entirely from scratch in TypeScript, relying solely on Node's native `node:zlib` for FlateDecode stream compression.
 - **Node.js Requirement**: Requires Node.js `>= 18.0.0`.
-- **Lightweight Footprint**: ~138.8 kB packed tarball (~775.9 kB unpacked).
-- **Sub-Millisecond Rendering**: Generates documents in milliseconds with low memory overhead.
+- **Package Size**: ~146.5 kB packed tarball (~797.3 kB unpacked, verified via `npm pack --dry-run`).
+- **Low-Millisecond Rendering**: Generates structured document PDFs in low milliseconds with minimal memory overhead.
 - **TrueType Font Subsetting**: Embeds only the used glyphs for custom `.ttf` fonts into Type0/CIDFontType2 objects with `/ToUnicode` CMaps, minimizing output file size.
 - **1D/2D Modern Layout**: 1D Flexbox (with `flex-wrap`) and 2D CSS Grid support for complex document structures.
+- **CSS Custom Properties & Variables**: Supports `--custom-property` definitions, `var()` resolution, fallbacks, inheritance, nested references, and cycle detection.
+- **CSS `@media` Queries**: Evaluates `@media print`, `@media all`, and width-based `(min-width: ...)` / `(max-width: ...)` queries against page content width.
 - **CSS Sizing Constraints**: `min-width`, `max-width`, `min-height`, `max-height` supported across block boxes, images, table cells, flex/grid items, and positioned elements.
 - **PDF Container Clipping (`overflow: hidden`)**: PDF-native graphics clipping (`q`/`Q`/`W`) for content containment, overflow-aware pagination suppression, and link annotation cropping.
 - **CSS `@page` Rule Support**: Parses `@page { size: A4 landscape; margin: 20pt; }` at-rules for document dimensions, orientation, and margins directly from CSS.
-- **Practical CSS Positioning**: `position: relative` and `position: absolute` support with `top`, `right`, `bottom`, `left` offsets (`px`, `pt`, `mm`, `cm`, `in`, `%`) and containing block resolution.
+- **Practical CSS Positioning & Stacking**: `position: relative`, `position: absolute`, and `position: fixed` (repeats element across pages for headers/footers/watermarks) with `z-index` paint ordering.
 - **Advanced PDF Pagination**: Modern `break-before: page`, `break-after: page`, `break-inside: avoid`, and legacy `page-break-*` aliases for reliable document page fragmentation across Block, Table, Flexbox, and Grid layouts.
-- **Clickable PDF Annotations**: Renders clickable HTML hyperlinks (`<a href="...">`) into PDF link annotations (`/Subtype /Link`, `/A /S /URI`).
-- **PDF Document Metadata**: Embeds custom metadata into PDF `/Info` dictionaries (`Title`, `Author`, `Subject`, `Keywords`, `Creator`, `Producer`).
+- **Clickable PDF Hyperlinks & Internal Anchors**: Renders external URLs (`http://`, `https://`, `mailto:`, `tel:`) into `/URI` annotations and internal fragment links (`href="#anchor"`) into PDF `/GoTo` destinations.
+- **PDF Document Metadata & Preferences**: Embeds metadata into PDF `/Info` dictionaries (`Title`, `Author`, `Subject`, `Keywords`, `Creator`, `Producer`), catalog `/ViewerPreferences`, `/Lang`, and `/PageLabels`.
 
 ---
 
@@ -176,7 +178,27 @@ fs.writeFileSync("./invoice.pdf", pdfBuffer);
 
 ## Asset Handling Guide
 
-`html-pdf-engine` operates entirely server-side and does not fetch external assets over HTTP/HTTPS. All external resources must be passed via `options`.
+By default, `html-pdf-engine` operates entirely server-side and performs no implicit network requests for external HTTP/HTTPS assets. Applications can supply assets via `options.images` / `options.fonts`, local filesystem paths, base64 data URLs, or an opt-in `AssetResolver`.
+
+### Remote Asset Loading (Opt-In)
+
+For environments requiring dynamic remote asset resolution, `html-pdf-engine` provides the `AssetResolver` interface and a built-in `createNetworkAssetResolver()` factory with strict SSRF protections and resource limits:
+
+```typescript
+import { HtmlToPdf, createNetworkAssetResolver } from "html-pdf-engine";
+
+const assetResolver = createNetworkAssetResolver({
+  maxSizeBytes: 5 * 1024 * 1024, // 5 MB limit
+  timeoutMs: 3000,
+  maxRedirects: 3,
+  allowPrivateIPs: false,       // SSRF protection: blocks local/private IP ranges (default)
+});
+
+const pdf = await HtmlToPdf.generateBuffer({
+  html: '<img src="https://cdn.example.com/logo.png" />',
+  assetResolver,
+});
+```
 
 ### 1. Images
 
@@ -200,12 +222,15 @@ const pdf = await HtmlToPdf.generateBuffer({
 });
 ```
 
-### 2. Custom TTF Fonts & Subsetting
+### 2. Custom Font Embedding
 
-Supported font format:
-- **TrueType** (`.ttf`)
+The built-in font pipeline supports:
+- **TrueType (`.ttf`)** — fully supported
+- **OpenType with TrueType outlines (`.otf` with `glyf` table)** — accepted by the parser (same binary table structure)
+- **WOFF / WOFF2** — **not supported**; the `@font-face` parser throws a `FontError` for these formats
+- **Remote `@font-face` URLs (http/https)** — **not supported**; throws a `FontError`. Fonts must be supplied as local file paths, data URLs, or Buffers.
 
-Network font imports (`@font-face` with URL) are not supported. Instead, pass font file paths or Node.js `Buffer` objects using `options.fonts`:
+Network font imports (`@font-face` with URL) are not supported. Pass font file paths or Node.js `Buffer` objects via `options.fonts`:
 
 ```typescript
 const pdf = await HtmlToPdf.generateBuffer({
@@ -243,19 +268,26 @@ const pdf = await HtmlToPdf.generateBuffer({
 });
 ```
 
-### PDF Hyperlinks
+### PDF Hyperlinks & Internal Document Navigation
 
-Clickable HTML anchor tags are automatically parsed into native PDF Link Annotations (`/Subtype /Link`, `/A /S /URI`):
+Clickable HTML anchor tags (`<a href="...">`) are parsed into native PDF Link Annotations (`/Subtype /Link`):
 
 ```html
-<!-- Web URLs -->
+<!-- External Web URLs & Protocol Schemes -->
 <a href="https://example.com">Visit Website</a>
-
-<!-- Email Links -->
 <a href="mailto:support@example.com">Contact Support</a>
+<a href="tel:+18005550199">Call Support</a>
+
+<!-- Internal Document Fragment Links -->
+<a href="#section-2">Jump to Section 2</a>
+
+<!-- Target Anchor Destination -->
+<h2 id="section-2">Section 2</h2>
 ```
 
-Bounding boxes for hyperlinks are calculated from the final laid-out text lines, correctly supporting multi-line wrapped link text across pages.
+- **External Links**: Generated as `/A /S /URI` actions supporting `http://`, `https://`, `mailto:`, and `tel:` schemes.
+- **Internal Fragment Links**: Fragment URLs (`href="#id"`) are resolved against matching DOM element IDs (`id="id"`) and compiled into PDF `/A /S /GoTo` internal destination actions.
+- **Bounding Boxes & Wrapping**: Hyperlink bounding boxes are computed from laid-out inline text lines, supporting multi-line wrapped links across pages.
 
 ### CSS Sizing Constraints & Container Clipping
 
@@ -492,47 +524,60 @@ try {
 | **TTF Subsetting** | **Supported** | Embeds subsetted CIDFontType2 / Type0 glyph maps with `/ToUnicode` CMaps. |
 | **Flexbox Layout** | **Supported** | 1D & multi-line layout (`flex-direction`, `flex-wrap`, `justify-content`, `align-items`, `gap`, `flex-grow/shrink/basis`). |
 | **CSS Grid Layout** | **Supported** | 2D track layout (`px`, `pt`, `%`, `fr`, `auto`, `repeat()`), explicit placement (`grid-column`, `grid-row`, `span`), auto placement, item alignment. |
-| **CSS Positioning** | **Partially Supported** | Practical `position: static`, `relative`, and `absolute` with `top/right/bottom/left` offsets and containing block resolution. `fixed`, `sticky`, `z-index`, and transforms unsupported. |
+| **CSS Positioning & Stacking** | **Supported** | Practical `position: static`, `relative`, `absolute`, and `fixed` (repeated across pages for headers/footers/watermarks) with containing block resolution and `z-index` paint ordering. `position: sticky` and 2D/3D transforms unsupported. |
 | **PDF Pagination & Page Breaks** | **Supported** | Practical `break-before: page`, `break-after: page`, `break-inside: avoid`, and legacy `page-break-*` aliases across Block, multi-page Table (`<thead>` automatic repeating headers across page breaks), Flexbox, Grid, and positioned elements. |
-| **PDF Hyperlinks** | **Supported** | Clickable link annotations (`/Subtype /Link`, `/A /S /URI`) supporting `http://`, `https://`, `mailto:`. |
-| **PDF Metadata** | **Supported** | Custom `/Info` dictionary entries (`Title`, `Author`, `Subject`, `Keywords`, `Creator`, `Producer`). |
+| **PDF Hyperlinks & Anchors** | **Supported** | Clickable `/URI` link annotations (`http://`, `https://`, `mailto:`, `tel:`) and internal fragment link annotations (`href="#id"`) resolved to PDF `/GoTo` destinations. |
+| **PDF Metadata & Preferences** | **Supported** | Custom `/Info` dictionary entries (`Title`, `Author`, `Subject`, `Keywords`, `Creator`, `Producer`), catalog `/ViewerPreferences`, `/Lang`, and `/PageLabels`. |
 | **Headers & Footers** | **Supported** | Dynamic `{{pageNumber}}` & `{{totalPages}}` text resolvers with alignment and divider lines. |
-| **CSS Variables** | **Not Supported** | Custom properties (`var(--name)`) not supported. |
-| **Media Queries** | **Not Supported** | `@media` print / screen blocks not supported. |
+| **CSS Variables** | **Supported** | Custom properties (`var(--name)`), fallback values, inheritance, nested variable resolution, and cycle protection. |
+| **Media Queries** | **Supported** | `@media print`, `@media all`, and width-based `(min-width: ...)` / `(max-width: ...)` query blocks evaluated against PDF page content width. |
 | **JavaScript Execution** | **Not Supported** | `<script>` tags parsed and visually hidden for security. |
-| **Remote Asset Loading** | **Not Supported** | Network fetching (`http://...` image/font URLs) intentionally excluded. Pass via `options`. |
+| **Remote Asset Loading** | **Opt-In** | Default renderer executes offline without network calls. Opt-in `AssetResolver` (`createNetworkAssetResolver()`) supported with SSRF protection, timeout, and byte limits. |
 
 ---
 
 ## Technical Limitations & Non-Goals
 
-The following features are intentionally unsupported to maintain a deterministic, dependency-free server architecture:
+The following features are intentionally unsupported or limited to maintain a deterministic, lightweight server architecture:
 
-- **CSS Variables & Custom Properties**: `var(--custom-property)` resolution is not supported.
+- **Image Formats**: The built-in image pipeline supports **PNG** and **JPEG** only (detected by binary magic bytes). SVG, WebP, AVIF, GIF, and BMP are not decoded and will throw an `ImageError`.
+- **Font Formats**: Custom font embedding supports TrueType (`.ttf`) and OpenType-with-TTF-outlines. WOFF and WOFF2 are not supported. Remote `@font-face` HTTP/HTTPS URLs are not supported.
+- **CSS Transforms**: The `transform` property (`rotate`, `scale`, `translate`, `matrix`) is not parsed or applied. Note: `text-transform` (uppercase/lowercase) is a separate supported property.
+- **`position: sticky`**: Not implemented; scroll-relative positioning is not meaningful in static PDFs.
+- **Unsupported Layout**: CSS Multi-column layout (`columns`), CSS regions, and `float`/`clear` have partial or no layout effect.
 - **Grid Template Areas & Subgrid**: Named `grid-template-areas`, `subgrid`, `minmax()`, `auto-fit`, and `auto-fill` are not supported.
-- **Unsupported Positioning & Transforms**: `position: fixed`, `position: sticky`, `z-index`, 2D/3D CSS transforms (`rotate`, `scale`, `translate`), and `float: left/right` are not supported.
-- **Media Queries & Animations**: `@media` rule evaluation, CSS keyframe animations, and transitions are ignored.
-- **Remote Asset Fetching**: HTTP/HTTPS network requests for remote images or fonts are not performed.
+- **Interactive Features**: JavaScript execution (`<script>`), CSS animations (`@keyframes`), hover states (`:hover`), and interactive form controls are excluded.
+- **SVG & Canvas**: No built-in SVG path renderer or Canvas API.
+- **Tagged PDF & Accessibility**: No `StructTreeRoot`, `MarkInfo`, or marked-content sequences are generated. The `/Lang` catalog entry is a metadata field only — its presence does not produce a tagged or PDF/UA-compliant PDF.
+- **Filters & Shadows**: `filter`, `box-shadow`, and `text-shadow` are not implemented.
 
-For a complete reference on supported properties and limitations, see [docs/feature-matrix.md](docs/feature-matrix.md) and [docs/limitations.md](docs/limitations.md).
+For a complete reference on supported properties and limitations, see the [Feature Matrix](https://github.com/surajthaqurie/html-pdf-engine/blob/main/docs/feature-matrix.md) and [Limitations](https://github.com/surajthaqurie/html-pdf-engine/blob/main/docs/limitations.md) documentation on GitHub.
 
 ---
 
 ## Performance Benchmarks
 
-Measured on Node.js v22 (x86_64 Linux, Single Process Execution):
+Measured using the repository benchmark suite (`npm run benchmark`) on Node.js v22 (x86_64 Linux, single process execution). Run `npm run benchmark` to reproduce:
 
-- **Benchmark Fixture**: Standard itemized business invoice (HTML + CSS + Flexbox header + Table + CSS variables).
-- **Iteration Count**: 100 PDF generations.
-- **Average Render Time**: **~0.93 – 3.38 ms** per PDF depending on document complexity.
-- **Throughput**: **~300 – 1,000+ PDFs / sec**.
-- **Memory Footprint Delta**: Minimal heap delta across consecutive renders (< 4 MB).
-- **FlateDecode Stream Reduction**: Compressed binary streams output natively.
+| Workload | Iterations | Avg Time per PDF | Throughput (ops/sec) |
+| :--- | ---: | ---: | ---: |
+| **Simple HTML** | 100 | ~0.96 ms | ~1,038 |
+| **Invoice** | 100 | ~2.71 ms | ~368 |
+| **Complex Layout** | 100 | ~1.62 ms | ~618 |
+| **Multi-page Report** | 50 | ~9.47 ms | ~105 |
+| **Local Images** | 50 | ~1.96 ms | ~510 |
+| **Large Table (100 rows)** | 20 | ~38.47 ms | ~26 |
+| **Large Table (500 rows)** | 5 | ~135.47 ms | ~7 |
+
+- **Methodology**: Measurements reflect engine execution only — HTML parsing, CSS cascade, layout box generation, paint command emission, and FlateDecode stream compression. Disk I/O and network asset fetching time are excluded.
+- **Warm-up**: Initial renders are performed before measurement to allow V8 JIT optimization.
+- **Determinism**: Output byte-for-byte identical across repeated executions (verified by benchmark suite).
+- **Concurrency**: Linear throughput scaling observed across 1–25 concurrent renders.
 
 ### Package Footprint
 
-- **NPM Tarball Size**: ~138.8 kB
-- **Unpacked Size**: ~775.9 kB
+- **Published Tarball Size**: ~146.5 kB packed (`npm pack --dry-run`)
+- **Unpacked Size**: ~797.3 kB
 - **Runtime Dependencies**: **0**
 
 ---

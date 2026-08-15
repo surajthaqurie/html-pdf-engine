@@ -58,6 +58,18 @@ export class PDFName {
   }
 }
 
+export function escapePdfString(str: string): string {
+  return str
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)")
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .replace(/\t/g, "\\t")
+    .replace(/\x08/g, "\\b")
+    .replace(/\x0c/g, "\\f");
+}
+
 export class PDFString {
   constructor(
     public readonly value: string,
@@ -65,15 +77,7 @@ export class PDFString {
   ) {}
 
   static escapeLiteral(str: string): string {
-    return str
-      .replace(/\\/g, "\\\\")
-      .replace(/\(/g, "\\(")
-      .replace(/\)/g, "\\)")
-      .replace(/\r/g, "\\r")
-      .replace(/\n/g, "\\n")
-      .replace(/\t/g, "\\t")
-      .replace(/\x08/g, "\\b")
-      .replace(/\x0c/g, "\\f");
+    return escapePdfString(str);
   }
 
   private hasNonAscii(str: string): boolean {

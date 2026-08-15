@@ -1,7 +1,7 @@
 # Architecture and Package Audit: html-pdf-engine
 
 ## Executive Summary
-This document presents the Phase 1 comprehensive audit of `html-pdf-engine` (v1.0.0), a zero-dependency, pure TypeScript HTML/CSS to PDF rendering engine.
+This document presents the comprehensive audit of `html-pdf-engine` (v1.0.0), a zero-dependency, pure TypeScript HTML/CSS to PDF rendering engine.
 
 ---
 
@@ -76,31 +76,52 @@ HTML & CSS Input
 
 ## 3. Test Suite Audit
 
-- **Existing Tests**: 3 integration test files (`tests/pdf-core.test.ts`, `tests/html-to-pdf.test.ts`, `tests/header-footer.test.ts`).
-- **Pass Rate**: 100% (11/11 tests passing).
-- **Gaps Identified**:
-  - Tests need organization into structured subdirectories (`html`, `css`, `cascade`, `layout`, `pagination`, `pdf`, `integration`).
-  - Unit tests needed for CSS specificity sorting edge cases, inline style precedence over stylesheet rules, parent-to-child style inheritance, line-wrapping algorithms, malformed HTML parser recovery, empty inputs, and custom page dimensions.
+- **Test Files**: 55 test files across unit, integration, font, API, and real-world fixture test suites.
+- **Pass Rate**: 100% (384/384 tests passing, verified via `npm test`).
+- **Coverage**: Unit tests for CSS cascade, specificity, custom properties, media queries, layout models (block, flex, grid, table), pagination, font subsetting, image parsing, positioning, overflow clipping, hyperlinks, PDF metadata, and malformed input resilience.
 
 ---
 
 ## 4. Security & Safety Audit
 
-- **Network Isolation**: The engine executes 100% offline in memory. No network fetch operations exist.
-- **Resource Loading**: External images (`<img src="http...">`), external stylesheets (`<link rel="stylesheet" href="...">`), or remote scripts are intentionally excluded from automatic remote loading to prevent SSRF (Server-Side Request Forgery) or network hanging.
-- **Client Script Isolation**: `<script>` tags are assigned `display: "none"` and excluded from visual layout compilation.
-- **File System Safety**: `generateFile` delegates directly to Node.js `fs.promises.writeFile`. Path validation should be documented for application callers.
+- **Network Security**: Pure offline execution by default. Opt-in remote asset loading via `AssetResolver` / `createNetworkAssetResolver()` includes built-in SSRF protections (blocking local/private IP ranges), configurable timeouts, max payload size limits, and redirect bounds.
+- **Resource Boundaries**: In-memory binary compilation avoids process-spawning vulnerabilities.
+- **Client Script Isolation**: `<script>` tags and inline event attributes are stripped and set to `display: none`.
+- **Serialization Escaping**: Escape handling for PDF literal strings (`escapePdfString`) and UTF-16BE encoding with BOM (`FEFF`).
 
 ---
 
 ## 5. Summary of Claims vs Reality
 
-| Feature | Claim Status | Actual Implementation Status |
-| :--- | :--- | :--- |
-| Zero External Dependencies | Verified | 100% Zero production dependencies |
-| HTML Parsing | Verified | Standard tags, text, entities, comments, style tags |
-| CSS Cascade | Verified | Inline CSS, `<style>` tags, external CSS string, specificity `[ID, Class, Tag]` |
-| PDF FlateDecode Compression | Verified | Native Node.js `zlib` stream compression |
-| Page Sizes | Verified | ISO (A0–A6, B4, B5), North American (Letter, Legal, Tabloid, Ledger, Executive), Custom `{ width, height }` |
-| Image Tags (`<img>`) | Unsupported | Intentionally unsupported in v1.0 |
-| Flexbox / Grid / Absolute Position | Unsupported | Intentionally unsupported in v1.0 (Block & Inline flow supported) |
+| Feature | Implementation Status |
+| :--- | :--- |
+| Zero External Dependencies | Verified — 0 runtime production dependencies |
+| HTML Parsing & Auto-Recovery | Verified — Standard HTML5 tags, entity decoding, unclosed tag recovery |
+| CSS Cascade & Specificity | Verified — Inline CSS, `<style>` blocks, external CSS, `[ID, Class, Tag]` specificity |
+| CSS Custom Properties (Variables) | Verified — `--var` declarations, `var()` resolution, fallbacks, inheritance, cycle protection |
+| CSS Media Queries | Verified — `@media print`, `@media all`, `@media (min-width / max-width)` against PDF width |
+| Layout Engines | Verified — Block, Inline, HTML Tables (repeating `<thead>`), Flexbox, CSS Grid |
+| Positioning & Stacking | Verified — `position: static / relative / absolute / fixed`, `z-index` paint ordering |
+| PDF Fragmentation & Breaks | Verified — `break-before/after: page`, `break-inside: avoid`, legacy `page-break-*` |
+| PDF Hyperlinks & Internal Anchors | Verified — `/URI` annotations (`http`, `https`, `mailto`, `tel`) and `#anchor` `/GoTo` links |
+| Asset Resolution | Verified — PNG/JPEG Data URLs, local file paths, Buffer mapping, opt-in `AssetResolver` |
+| PDF Compression & Metadata | Verified — `zlib` FlateDecode compression, `/Info` dictionary, `/ViewerPreferences` |
+| Image Formats | PNG and JPEG only — SVG, WebP, AVIF, GIF, BMP are not decoded |
+| Font Formats | TTF (and OTF-TTF-outline) supported; WOFF/WOFF2 and remote HTTP `@font-face` URLs are not |
+| Tagged PDF / PDF Accessibility | Not implemented — no `StructTreeRoot`, `MarkInfo`, or marked-content sequences |
+| CSS Transforms | Not implemented — `transform: rotate/scale/translate` not parsed or applied |
+| `position: sticky` | Not implemented — scroll-relative positioning not applicable to static PDFs |
+
+### Current Benchmark Summary (from `npm run benchmark`)
+
+| Workload | Avg Time | Throughput |
+| :--- | ---: | ---: |
+| Simple HTML (100 renders) | ~0.96 ms | ~1,038 ops/sec |
+| Invoice (100 renders) | ~2.71 ms | ~368 ops/sec |
+| Complex Layout (100 renders) | ~1.62 ms | ~618 ops/sec |
+| Multi-page (50 renders) | ~9.47 ms | ~105 ops/sec |
+
+### Package Size (from `npm pack --dry-run`)
+- **Packed**: ~146.5 kB
+- **Unpacked**: ~797.3 kB
+- **Files in package**: 159 (dist/ + README.md + LICENSE + package.json)

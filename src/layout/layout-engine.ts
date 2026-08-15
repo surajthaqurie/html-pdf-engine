@@ -2272,7 +2272,7 @@ export class LayoutEngine {
         currRowY += rH;
       }
 
-      while (currRowY > printableBottom + ctx.printableHeight) {
+      while (currRowY > printableBottom) {
         currPageIdx++;
         currRowY -= ctx.printableHeight;
       }

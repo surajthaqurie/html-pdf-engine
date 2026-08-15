@@ -88,6 +88,10 @@ export class PDFPage {
     };
   }
 
+  addRawOp(code: string): void {
+    this.contentStream.addRawOp(code);
+  }
+
   /**
    * High-level helper to draw text using top-left HTML origin (or direct PDF origin if specified)
    */
@@ -136,16 +140,16 @@ export class PDFPage {
     } else if (options.fontName) {
       const font = new FontManager().getFont(options.fontName);
       if (font.isCustom) {
-        this.contentStream.drawCustomText(
+        this.contentStream.drawCustomText({
           text,
-          options.fontName,
+          fontName: options.fontName,
           fontAlias,
           fontSize,
-          pdfX,
-          pdfY,
+          x: pdfX,
+          y: pdfY,
           letterSpacing,
           wordSpacing,
-        );
+        });
       } else {
         this.contentStream.drawText(
           text,
@@ -253,7 +257,14 @@ export class PDFPage {
       this.contentStream.setStrokeColor(options.strokeColor);
     }
 
-    this.contentStream.drawLine(x1, pdfY1, x2, pdfY2, options.lineStyle, options.lineWidth ?? 1);
+    this.contentStream.drawLine(
+      x1,
+      pdfY1,
+      x2,
+      pdfY2,
+      options.lineStyle,
+      options.lineWidth ?? 1,
+    );
   }
 
   /**
@@ -280,7 +291,7 @@ export class PDFPage {
     this.contentStream.drawImage(alias, pdfX, pdfY, width, height);
   }
 
-  private clipStack: Array<[number, number, number, number]> = [];
+  private readonly clipStack: Array<[number, number, number, number]> = [];
 
   startClip(
     x: number,
