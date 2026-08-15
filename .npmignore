@@ -1,0 +1,11 @@
+# Source & Tests (NPM published tarball uses compiled dist/)
+src/
+tests/
+artifacts/
+tsconfig.json
+vitest.config.ts
+.gitignore
+.npmignore
+.git/
+.github/
+*.log

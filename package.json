@@ -1,0 +1,70 @@
+{
+  "name": "html-pdf-engine",
+  "version": "1.0.0",
+  "description": "Lightweight, deterministic HTML/CSS-to-PDF engine for structured documents — zero runtime dependencies, pure TypeScript",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/surajthaqurie/html-pdf-engine.git"
+  },
+  "bugs": {
+    "url": "https://github.com/surajthaqurie/html-pdf-engine/issues"
+  },
+  "homepage": "https://github.com/surajthaqurie/html-pdf-engine#readme",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build && npm run test",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:typecheck": "tsc -p tsconfig.test.json",
+    "benchmark": "npx tsx benchmarks/render-speed.ts && npx tsx benchmarks/memory-footprint.ts && npx tsx benchmarks/output-size.ts && npx tsx benchmarks/suite.ts"
+  },
+  "keywords": [
+    "pdf",
+    "html-to-pdf",
+    "pdf-generator",
+    "html2pdf",
+    "css-to-pdf",
+    "pdf-compiler",
+    "rendering-engine",
+    "zero-dependency",
+    "pure-typescript",
+    "invoice-generator",
+    "pdf-reports",
+    "multi-page-pdf",
+    "flatedecode",
+    "zlib-compression",
+    "lightweight-pdf",
+    "no-puppeteer",
+    "no-chromium",
+    "fast-pdf",
+    "node-pdf"
+  ],
+  "author": "surajthaqurie",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^3.0.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
