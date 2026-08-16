@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+### Patch Changes
+
+- 83aa289: Prepare the 1.0.1 release with updated documentation covering the current HTML, CSS, layout, SVG, image, font, metadata, pagination, hyperlink, header/footer, and error-handling capabilities.
+
 All notable changes to html-pdf-engine will be documented here.
 
 ## [Unreleased]
