@@ -118,12 +118,12 @@ This document outlines the current technical limitations and architectural non-g
 - **CSS Multi-column layout** (`columns`, `column-count`, `column-width`): Not implemented.
 - **CSS animations & transitions** (`@keyframes`, `transition`): Not applicable to static PDF output.
 - **CSS filters & shadows** (`filter`, `box-shadow`, `text-shadow`): Not implemented.
-- **SVG rendering**: No built-in SVG path parser or renderer. `<svg>` elements are skipped.
+- **SVG limitations**: While a dedicated SVG renderer is included for core primitives (`path`, `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`), it does not support `<text>` elements, gradients, clipping, or filters.
 - **Canvas rendering**: `<canvas>` elements are not rendered.
 
 ### Image Formats
-- The built-in image pipeline accepts only **PNG** and **JPEG** binary data (detected by magic bytes `89 50 4E 47` and `FF D8` respectively).
-- **SVG**, **WebP**, **AVIF**, **GIF**, and **BMP** images are not decoded. Passing these formats throws an `ImageError`.
+- The built-in image pipeline supports **PNG**, **JPEG**, and **SVG** (vector subset).
+- **WebP**, **AVIF**, **GIF**, and **BMP** images are not decoded. Passing these formats throws an `ImageError`.
 
 ### Font Formats
 - **WOFF** and **WOFF2** web font formats are explicitly rejected at the `@font-face` parser stage (`FontError`).

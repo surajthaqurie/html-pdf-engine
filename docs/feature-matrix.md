@@ -25,10 +25,11 @@ Status Levels:
 | `<style>` | **SUPPORTED** | CSS text content extracted and parsed into cascade engine. |
 | `<script>` | **SUPPORTED** | Parsed and assigned `display: none` (code not visually printed). |
 | `<a>` (Hyperlinks) | **SUPPORTED** | Clickable URL link annotations (`/Subtype /Link`) supporting external `http://`, `https://`, `mailto:`, and `tel:` schemes (`/A /S /URI`), as well as internal fragment links (`href="#id"`) resolved to PDF `/A /S /GoTo` destination coordinates across multi-line wrapped text boxes and repeated headers. |
-| `<img>` (Images — PNG/JPEG) | **SUPPORTED** | PNG and JPEG images via base64 Data URLs, local filesystem paths, Buffer input (`options.images`), or opt-in `AssetResolver`. Format is detected by binary magic bytes; other formats throw an `ImageError`. |
-| `<img>` (Images — SVG, WebP, AVIF, GIF, BMP) | **UNSUPPORTED** | No built-in decoders for vector or modern raster formats. The image pipeline accepts only PNG and JPEG binary data. |
+| `<img>` (Images — PNG/JPEG/SVG) | **SUPPORTED** | PNG, JPEG, and SVG images via base64 Data URLs, local filesystem paths, Buffer input (`options.images`), or opt-in `AssetResolver`. |
+| `<img>` (Images — WebP, AVIF, GIF, BMP) | **UNSUPPORTED** | No built-in decoders for modern raster formats. Passing these throws an `ImageError`. |
 | `<form>`, `<input>`, `<button>` | **INTENTIONAL NON-GOAL** | Interactive form controls are not rendered. |
-| `<svg>`, `<canvas>` | **UNSUPPORTED** | No SVG path renderer or canvas implementation. |
+| `<svg>` | **SUPPORTED** | Dedicated SVG renderer. Primitives (`rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path`), transforms, and styles (`fill`, `stroke`, etc) are supported. Unsupported: `<text>`, `<image>`, gradients, clipping, filters. |
+| `<canvas>` | **UNSUPPORTED** | No canvas implementation. |
 | `<iframe>`, `<video>`, `<audio>` | **INTENTIONAL NON-GOAL** | Embedded media elements are not rendered. |
 | `<script>` | **INTENTIONAL NON-GOAL** | Script tags are parsed and assigned `display: none`. JavaScript is never executed. |
 

@@ -4,6 +4,12 @@ All notable changes to html-pdf-engine will be documented here.
 
 ## [Unreleased]
 
+## [1.0.1] - Unreleased
+
+### Fixed
+
+- **Documentation**: Comprehensive documentation audit correcting inaccurate claims. Documented the previously unlisted SVG vector rendering capabilities, clarified CSS `@page` override behaviors, and provided full public API typings.
+
 ## [1.0.0] - 2026-08-16
 
 ### Added
@@ -14,5 +20,5 @@ All notable changes to html-pdf-engine will be documented here.
 - **Positioning**: Practical CSS positioning (`position: relative`, `absolute`, `fixed`) with `z-index` paint ordering.
 - **Pagination**: Modern fragmentation (`break-before: page`, `break-after: page`, `break-inside: avoid`) and CSS `@page` rule support.
 - **Fonts**: Built-in Type1 fonts (Helvetica, Times-Roman, Courier) and custom TrueType (`.ttf`) font embedding with automatic glyph subsetting and `/ToUnicode` CMaps.
-- **Images**: Native PNG and JPEG embedding via Data URLs, local files, `Buffer` objects, or opt-in `AssetResolver` with SSRF protection.
+- **Images**: Native PNG, JPEG, and SVG vector embedding via Data URLs, local files, `Buffer` objects, or opt-in `AssetResolver` with SSRF protection.
 - **PDF Generation**: Native PDF 1.7 binary writer with FlateDecode (`zlib`) stream compression. Support for dynamic headers/footers (`{{pageNumber}}`, `{{totalPages}}`), clickable hyperlinks, internal anchors, and PDF metadata.

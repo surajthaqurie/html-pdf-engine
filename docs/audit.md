@@ -104,9 +104,9 @@ HTML & CSS Input
 | Positioning & Stacking | Verified — `position: static / relative / absolute / fixed`, `z-index` paint ordering |
 | PDF Fragmentation & Breaks | Verified — `break-before/after: page`, `break-inside: avoid`, legacy `page-break-*` |
 | PDF Hyperlinks & Internal Anchors | Verified — `/URI` annotations (`http`, `https`, `mailto`, `tel`) and `#anchor` `/GoTo` links |
-| Asset Resolution | Verified — PNG/JPEG Data URLs, local file paths, Buffer mapping, opt-in `AssetResolver` |
+| Asset Resolution | Verified — PNG/JPEG/SVG Data URLs, local file paths, Buffer mapping, opt-in `AssetResolver` |
 | PDF Compression & Metadata | Verified — `zlib` FlateDecode compression, `/Info` dictionary, `/ViewerPreferences` |
-| Image Formats | PNG and JPEG only — SVG, WebP, AVIF, GIF, BMP are not decoded |
+| Image Formats | PNG, JPEG, SVG — WebP, AVIF, GIF, BMP are not decoded |
 | Font Formats | TTF (and OTF-TTF-outline) supported; WOFF/WOFF2 and remote HTTP `@font-face` URLs are not |
 | Tagged PDF / PDF Accessibility | Not implemented — no `StructTreeRoot`, `MarkInfo`, or marked-content sequences |
 | CSS Transforms | Not implemented — `transform: rotate/scale/translate` not parsed or applied |

@@ -205,6 +205,7 @@ const pdf = await HtmlToPdf.generateBuffer({
 Supported image formats:
 - **PNG** (`image/png`)
 - **JPEG** (`image/jpeg`)
+- **SVG** (`image/svg+xml`) - *See SVG documentation below for supported subset*
 
 Image sources can be specified in HTML `<img src="...">` using:
 - **Base64 Data URLs**: `<img src="data:image/png;base64,iVBORw0KGgo..." />`
@@ -221,6 +222,21 @@ const pdf = await HtmlToPdf.generateBuffer({
   },
 });
 ```
+
+### 2. SVG Vector Images
+
+`html-pdf-engine` includes a dedicated SVG renderer. SVGs can be included via `<img>`, Data URLs, `options.images`, or directly as inline `<svg>` HTML tags.
+
+**Supported SVG Subset:**
+- **Primitives**: `rect` (with `rx`/`ry`), `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path`.
+- **Transforms**: `translate`, `scale`, `rotate`, `matrix` on SVG elements.
+- **Styling**: `fill`, `stroke`, `stroke-width`, `stroke-linecap`, `stroke-linejoin`, `stroke-dasharray`, `opacity`.
+- **ViewBox**: `viewBox` attribute is fully supported with scaling.
+
+**Unsupported in SVG:**
+- `<text>` elements.
+- Gradients (`<linearGradient>`, `<radialGradient>`), Filters, and Clipping paths.
+- Embedded raster images (`<image>`) inside SVG.
 
 ### 2. Custom Font Embedding
 
@@ -519,7 +535,7 @@ try {
 | **Block & Inline Layout** | **Supported** | Text wrapping, line height, margins, padding, border shorthand & individual sides. |
 | **HTML Tables** | **Supported** | `<table>`, `thead`, `tbody`, `tfoot`, `tr`, `th`, `td` with borders, padding, cell text-wrapping, automatic `<thead>` repeating headers across multi-page breaks, multi-row header repetition, and `break-inside: avoid` on `tr`. |
 | **Lists** | **Supported** | `<ul>`, `<ol>`, `<li>` with standard bullet and numbered layout spacing. |
-| **PNG & JPEG Images** | **Supported** | Base64 Data URLs, local file paths, and Node.js Buffer mapping (`options.images`). |
+| **PNG, JPEG & SVG Images** | **Supported** | Base64 Data URLs, local file paths, and Node.js Buffer mapping (`options.images`). SVG vector rendering supported for common primitives (`path`, `rect`, `circle`, etc). |
 | **Custom TTF Fonts** | **Supported** | Custom `.ttf` embedding via `options.fonts` (`regular`, `bold`, `italic`, `boldItalic`). |
 | **TTF Subsetting** | **Supported** | Embeds subsetted CIDFontType2 / Type0 glyph maps with `/ToUnicode` CMaps. |
 | **Flexbox Layout** | **Supported** | 1D & multi-line layout (`flex-direction`, `flex-wrap`, `justify-content`, `align-items`, `gap`, `flex-grow/shrink/basis`). |
@@ -540,14 +556,14 @@ try {
 
 The following features are intentionally unsupported or limited to maintain a deterministic, lightweight server architecture:
 
-- **Image Formats**: The built-in image pipeline supports **PNG** and **JPEG** only (detected by binary magic bytes). SVG, WebP, AVIF, GIF, and BMP are not decoded and will throw an `ImageError`.
+- **Image Formats**: The built-in image pipeline supports **PNG**, **JPEG**, and **SVG** (subset). WebP, AVIF, GIF, and BMP are not decoded and will throw an `ImageError`.
 - **Font Formats**: Custom font embedding supports TrueType (`.ttf`) and OpenType-with-TTF-outlines. WOFF and WOFF2 are not supported. Remote `@font-face` HTTP/HTTPS URLs are not supported.
-- **CSS Transforms**: The `transform` property (`rotate`, `scale`, `translate`, `matrix`) is not parsed or applied. Note: `text-transform` (uppercase/lowercase) is a separate supported property.
+- **CSS Transforms**: The `transform` property (`rotate`, `scale`, `translate`, `matrix`) is not parsed or applied to standard HTML elements. Note: SVG `<svg>` elements *do* support the `transform` attribute. `text-transform` (uppercase/lowercase) is a separate supported property.
 - **`position: sticky`**: Not implemented; scroll-relative positioning is not meaningful in static PDFs.
 - **Unsupported Layout**: CSS Multi-column layout (`columns`), CSS regions, and `float`/`clear` have partial or no layout effect.
 - **Grid Template Areas & Subgrid**: Named `grid-template-areas`, `subgrid`, `minmax()`, `auto-fit`, and `auto-fill` are not supported.
 - **Interactive Features**: JavaScript execution (`<script>`), CSS animations (`@keyframes`), hover states (`:hover`), and interactive form controls are excluded.
-- **SVG & Canvas**: No built-in SVG path renderer or Canvas API.
+- **Canvas**: No built-in Canvas API.
 - **Tagged PDF & Accessibility**: No `StructTreeRoot`, `MarkInfo`, or marked-content sequences are generated. The `/Lang` catalog entry is a metadata field only — its presence does not produce a tagged or PDF/UA-compliant PDF.
 - **Filters & Shadows**: `filter`, `box-shadow`, and `text-shadow` are not implemented.
 
