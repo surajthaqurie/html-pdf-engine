@@ -31,13 +31,13 @@ npm run benchmark
 
 | Workload | Iterations | Avg Time per PDF | Throughput (ops/sec) | Heap Delta (MB) |
 | :--- | ---: | ---: | ---: | ---: |
-| **Simple HTML** | 100 | ~0.96 ms | ~1,038 | ~4.00 |
-| **Invoice** | 100 | ~2.71 ms | ~368 | ~0.94 |
-| **Complex Layout** | 100 | ~1.62 ms | ~618 | ~2.58 |
-| **Multi-page Report** | 50 | ~9.47 ms | ~105 | ~19.96 |
-| **Local Images** | 50 | ~1.96 ms | ~510 | (varies) |
-| **Large Table (100 rows)** | 20 | ~38.47 ms | ~26 | (varies) |
-| **Large Table (500 rows)** | 5 | ~135.47 ms | ~7 | ~20.40 |
+| **Simple HTML** | 100 | ~0.73 ms | ~1,366 | ~3.19 |
+| **Invoice** | 100 | ~2.18 ms | ~458 | ~0.14 |
+| **Complex Layout** | 100 | ~1.67 ms | ~598 | ~-0.66 |
+| **Multi-page Report** | 50 | ~8.05 ms | ~124 | ~19.79 |
+| **Local Images** | 50 | ~1.40 ms | ~715 | ~-6.08 |
+| **Large Table (100 rows)** | 20 | ~25.41 ms | ~39 | ~2.37 |
+| **Large Table (500 rows)** | 5 | ~150.89 ms | ~7 | ~17.42 |
 
 ### Methodology & Scope
 

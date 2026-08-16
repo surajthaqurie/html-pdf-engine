@@ -110,8 +110,8 @@
 | `position: static` | Default normal flow |
 | `position: relative` | Normal flow position with visual offset via `top/right/bottom/left` |
 | `position: absolute` | Removed from flow, positioned relative to nearest positioned ancestor |
-| `position: fixed` | **Phase 22**: Removed from flow; rendered on **every page** (suitable for repeating headers/footers/watermarks) |
-| `z-index` | **Phase 22**: Paint-order sorting across all commands per page |
+| `position: fixed` | Removed from flow; rendered on **every page** (suitable for repeating headers/footers/watermarks) |
+| `z-index` | Paint-order sorting across all commands per page |
 | `float: left/right` | Parsed and stored; **not used in layout** (see Limitations) |
 | `clear` | Parsed and stored; **not used in layout** |
 
@@ -271,7 +271,7 @@ const pdf = await HtmlToPdf.generateBuffer({
 | Web fonts from CDN | ❌ (opt-in resolver) | ✅ |
 | Pixel-perfect render | ❌ | ✅ |
 | Runtime dependencies | **0** | Chromium (~200 MB) |
-| Engine render speed | **Low-millisecond (~0.96–2.71 ms, structured docs)** | Varies (browser process & rendering pipeline) |
+| Engine render speed | **Low-millisecond (~0.73–2.18 ms, structured docs)** | Varies (browser process & rendering pipeline) |
 | Deterministic output | **✅ Byte-identical** | ❌ Varies |
-| Runtime binary footprint | **0 dependencies (~146.5 kB tarball)** | Chromium binary (~200 MB) |
+| Runtime binary footprint | **0 dependencies (~169.1 kB tarball)** | Chromium binary (~200 MB) |
 | Thread safety | **✅ In-memory heap** | ❌ Requires process isolation |

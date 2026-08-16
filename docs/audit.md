@@ -116,12 +116,12 @@ HTML & CSS Input
 
 | Workload | Avg Time | Throughput |
 | :--- | ---: | ---: |
-| Simple HTML (100 renders) | ~0.96 ms | ~1,038 ops/sec |
-| Invoice (100 renders) | ~2.71 ms | ~368 ops/sec |
-| Complex Layout (100 renders) | ~1.62 ms | ~618 ops/sec |
-| Multi-page (50 renders) | ~9.47 ms | ~105 ops/sec |
+| Simple HTML (100 renders) | ~0.73 ms | ~1,366 ops/sec |
+| Invoice (100 renders) | ~2.18 ms | ~458 ops/sec |
+| Complex Layout (100 renders) | ~1.67 ms | ~598 ops/sec |
+| Multi-page (50 renders) | ~8.05 ms | ~124 ops/sec |
 
 ### Package Size (from `npm pack --dry-run`)
-- **Packed**: ~146.5 kB
-- **Unpacked**: ~797.3 kB
-- **Files in package**: 159 (dist/ + README.md + LICENSE + package.json)
+- **Packed**: ~169.1 kB
+- **Unpacked**: ~945.0 kB
+- **Files in package**: 187 (dist/ + README.md + LICENSE + package.json)

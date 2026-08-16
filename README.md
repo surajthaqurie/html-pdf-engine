@@ -28,7 +28,7 @@ Lightweight, dependency-free HTML & CSS to PDF engine for Node.js, designed for 
 
 - **Zero Runtime Dependencies**: Built entirely from scratch in TypeScript, relying solely on Node's native `node:zlib` for FlateDecode stream compression.
 - **Node.js Requirement**: Requires Node.js `>= 18.0.0`.
-- **Package Size**: ~146.5 kB packed tarball (~797.3 kB unpacked, verified via `npm pack --dry-run`).
+- **Package Size**: ~169.1 kB packed tarball (~945.0 kB unpacked, verified via `npm pack --dry-run`).
 - **Low-Millisecond Rendering**: Generates structured document PDFs in low milliseconds with minimal memory overhead.
 - **TrueType Font Subsetting**: Embeds only the used glyphs for custom `.ttf` fonts into Type0/CIDFontType2 objects with `/ToUnicode` CMaps, minimizing output file size.
 - **1D/2D Modern Layout**: 1D Flexbox (with `flex-wrap`) and 2D CSS Grid support for complex document structures.
@@ -561,13 +561,13 @@ Measured using the repository benchmark suite (`npm run benchmark`) on Node.js v
 
 | Workload | Iterations | Avg Time per PDF | Throughput (ops/sec) |
 | :--- | ---: | ---: | ---: |
-| **Simple HTML** | 100 | ~0.96 ms | ~1,038 |
-| **Invoice** | 100 | ~2.71 ms | ~368 |
-| **Complex Layout** | 100 | ~1.62 ms | ~618 |
-| **Multi-page Report** | 50 | ~9.47 ms | ~105 |
-| **Local Images** | 50 | ~1.96 ms | ~510 |
-| **Large Table (100 rows)** | 20 | ~38.47 ms | ~26 |
-| **Large Table (500 rows)** | 5 | ~135.47 ms | ~7 |
+| **Simple HTML** | 100 | ~0.73 ms | ~1,366 |
+| **Invoice** | 100 | ~2.18 ms | ~458 |
+| **Complex Layout** | 100 | ~1.67 ms | ~598 |
+| **Multi-page Report** | 50 | ~8.05 ms | ~124 |
+| **Local Images** | 50 | ~1.40 ms | ~715 |
+| **Large Table (100 rows)** | 20 | ~25.41 ms | ~39 |
+| **Large Table (500 rows)** | 5 | ~150.89 ms | ~7 |
 
 - **Methodology**: Measurements reflect engine execution only — HTML parsing, CSS cascade, layout box generation, paint command emission, and FlateDecode stream compression. Disk I/O and network asset fetching time are excluded.
 - **Warm-up**: Initial renders are performed before measurement to allow V8 JIT optimization.
@@ -576,8 +576,8 @@ Measured using the repository benchmark suite (`npm run benchmark`) on Node.js v
 
 ### Package Footprint
 
-- **Published Tarball Size**: ~146.5 kB packed (`npm pack --dry-run`)
-- **Unpacked Size**: ~797.3 kB
+- **Published Tarball Size**: ~169.1 kB packed (`npm pack --dry-run`)
+- **Unpacked Size**: ~945.0 kB
 - **Runtime Dependencies**: **0**
 
 ---
