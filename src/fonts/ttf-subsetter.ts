@@ -287,6 +287,34 @@ function createTTFSubset(
     );
   }
 
+  const origCvt = tables["cvt "];
+  if (origCvt) {
+    newTableMap["cvt "] = Buffer.from(
+      rawBuffer.subarray(origCvt.offset, origCvt.offset + origCvt.length),
+    );
+  }
+
+  const origFpgm = tables["fpgm"];
+  if (origFpgm) {
+    newTableMap["fpgm"] = Buffer.from(
+      rawBuffer.subarray(origFpgm.offset, origFpgm.offset + origFpgm.length),
+    );
+  }
+
+  const origPrep = tables["prep"];
+  if (origPrep) {
+    newTableMap["prep"] = Buffer.from(
+      rawBuffer.subarray(origPrep.offset, origPrep.offset + origPrep.length),
+    );
+  }
+
+  const origGasp = tables["gasp"];
+  if (origGasp) {
+    newTableMap["gasp"] = Buffer.from(
+      rawBuffer.subarray(origGasp.offset, origGasp.offset + origGasp.length),
+    );
+  }
+
   // Assemble final TTF binary
   const tableTags = Object.keys(newTableMap).sort();
   const subsetNumTables = tableTags.length;

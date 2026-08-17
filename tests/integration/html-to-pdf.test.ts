@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { HtmlToPdf } from "../../src/core/html-to-pdf.js";
 import * as fs from "fs";
 import * as path from "path";
+import { extractPdfText } from "../utils/pdf-text-extractor.js";
 
 describe("HtmlToPdf Integration API", () => {
   it("should generate a valid PDF binary buffer from HTML & CSS", async () => {
@@ -31,7 +32,8 @@ describe("HtmlToPdf Integration API", () => {
     expect(buffer.length).toBeGreaterThan(100);
     const pdfStr = buffer.toString("binary");
     expect(pdfStr).toContain("%PDF-1.7");
-    expect(pdfStr).toContain("Integration Test Report");
+    const extracted = extractPdfText(buffer);
+    expect(extracted).toContain("Integration Test Report");
   });
 
   it("should generate a PDF file directly to disk path", async () => {

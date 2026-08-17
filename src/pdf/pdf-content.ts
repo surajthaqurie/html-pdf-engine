@@ -19,9 +19,98 @@ export interface DrawCustomTextOp {
   wordSpacing?: number;
 }
 
-type PDFOp =
-  | { type: "raw"; code: string }
-  | DrawCustomTextOp;
+type PDFOp = { type: "raw"; code: string } | DrawCustomTextOp;
+
+// Complete CP1252 byte mapping for the 0x80-0x9F range
+const CP1252_EXTRA: Record<number, number> = {
+  0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84,
+  0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02c6: 0x88,
+  0x2030: 0x89, 0x0160: 0x8a, 0x2039: 0x8b, 0x0152: 0x8c,
+  0x017d: 0x8e, 0x2018: 0x91, 0x2019: 0x92, 0x201c: 0x93,
+  0x201d: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97,
+  0x02dc: 0x98, 0x2122: 0x99, 0x0161: 0x9a, 0x203a: 0x9b,
+  0x0153: 0x9c, 0x017e: 0x9e, 0x0178: 0x9f,
+};
+
+// Transliteration table: Unicode chars above U+00FF that don't exist in CP1252
+// are mapped to the closest ASCII/Latin-1 equivalent string.
+const UNICODE_XLAT: Record<number, string> = {
+  0x00a0: " ",   // NO-BREAK SPACE → regular space
+  0x00ad: "-",   // SOFT HYPHEN
+  0x00d7: "x",   // × MULTIPLICATION SIGN
+  0x00f7: "/",   // ÷ DIVISION SIGN
+  0x2010: "-",   // ‐ HYPHEN
+  0x2011: "-",   // ‑ NON-BREAKING HYPHEN
+  0x2012: "-",   // ‒ FIGURE DASH
+  0x2015: "-",   // ― HORIZONTAL BAR
+  0x2032: "'",   // ′ PRIME
+  0x2033: '"',   // ″ DOUBLE PRIME
+  0x2044: "/",   // ⁄ FRACTION SLASH
+  0x2190: "<-",  // ←
+  0x2192: "->",  // →
+  0x2194: "<->", // ↔
+  0x21d2: "=>",  // ⇒
+  0x2009: " ",   // THIN SPACE
+  0x200b: "",    // ZERO WIDTH SPACE
+  0x200c: "",    // ZERO WIDTH NON-JOINER
+  0x200d: "",    // ZERO WIDTH JOINER
+  0x2212: "-",   // − MINUS SIGN
+  0x2248: "~=",  // ≈
+  0x2260: "!=",  // ≠
+  0x2264: "<=",  // ≤
+  0x2265: ">=",  // ≥
+  0x221e: "inf", // ∞
+  0x03b1: "a",   // α
+  0x03b2: "b",   // β
+  0x03b3: "g",   // γ
+  0x03c0: "pi",  // π
+  0x00a9: "(c)", // © (already in Latin-1 but safe fallback)
+  0x00ae: "(R)", // ®
+  0x2120: "(SM)",// ℠
+  0x2103: "C",   // ℃
+  0x2109: "F",   // ℉
+  0x25cf: "*",   // ●
+  0x25a0: "[]",  // ■
+  0x2713: "v",   // ✓
+  0x2717: "x",   // ✗
+  0x25b6: ">",   // ▶
+  0x25c0: "<",   // ◀
+  0x25bc: "v",   // ▼
+  0x25b2: "^",   // ▲
+  0xfb01: "fi",  // ﬁ LATIN SMALL LIGATURE FI
+  0xfb02: "fl",  // ﬂ LATIN SMALL LIGATURE FL
+};
+
+/**
+ * Convert a Unicode JS string to a CP1252/WinAnsiEncoding hex byte stream
+ * for use as a PDF <hex> Tj operand.
+ *
+ * Per-character strategy:
+ *  1. U+0000–U+00FF  → direct byte (Latin-1 maps 1:1 to CP1252)
+ *  2. In CP1252_EXTRA → mapped CP1252 byte
+ *  3. In UNICODE_XLAT → best-effort ASCII transliteration (recursed)
+ *  4. Unknown        → 0x3F '?'
+ */
+function toWinAnsiHex(text: string): string {
+  let hex = "";
+  for (let i = 0; i < text.length; i++) {
+    const cp = text.codePointAt(i) ?? text.charCodeAt(i);
+    if (cp > 0xffff) i++; // skip low surrogate of surrogate pair
+
+    if (cp <= 0xff) {
+      hex += cp.toString(16).padStart(2, "0");
+    } else if (CP1252_EXTRA[cp] !== undefined) {
+      hex += CP1252_EXTRA[cp]!.toString(16).padStart(2, "0");
+    } else if (UNICODE_XLAT[cp] !== undefined) {
+      // Transliteration is ASCII — recursion terminates immediately
+      hex += toWinAnsiHex(UNICODE_XLAT[cp]!);
+    } else {
+      hex += "3f"; // '?'
+    }
+  }
+  return hex.toUpperCase();
+}
+
 
 export function generateRoundedRectPath(
   x: number,
@@ -49,7 +138,7 @@ export function generateRoundedRectPath(
   const ops: string[] = [];
   ops.push(
     `${(x + r1).toFixed(4)} ${(y + h).toFixed(4)} m`,
-    `${(x + w - r2).toFixed(4)} ${(y + h).toFixed(4)} l`
+    `${(x + w - r2).toFixed(4)} ${(y + h).toFixed(4)} l`,
   );
   if (r2 > 0) {
     ops.push(
@@ -131,7 +220,13 @@ export class PDFContentStream {
       bottomLeft: number;
     },
   ): void {
-    if (radii && (radii.topLeft > 0 || radii.topRight > 0 || radii.bottomRight > 0 || radii.bottomLeft > 0)) {
+    if (
+      radii &&
+      (radii.topLeft > 0 ||
+        radii.topRight > 0 ||
+        radii.bottomRight > 0 ||
+        radii.bottomLeft > 0)
+    ) {
       const pathCode = generateRoundedRectPath(x, y, width, height, radii);
       this.ops.push({ type: "raw", code: pathCode });
       if (fill && stroke) {
@@ -170,7 +265,7 @@ export class PDFContentStream {
     this.ops.push(
       { type: "raw", code: `${x1.toFixed(4)} ${y1.toFixed(4)} m` },
       { type: "raw", code: `${x2.toFixed(4)} ${y2.toFixed(4)} l` },
-      { type: "raw", code: "S" }
+      { type: "raw", code: "S" },
     );
     if (style) {
       this.setLineDash("solid", 1);
@@ -186,12 +281,27 @@ export class PDFContentStream {
     letterSpacing = 0,
     wordSpacing = 0,
   ): void {
-    const escapedText = text
-      .replaceAll("\\", String.raw`\\`)
-      .replaceAll("(", String.raw`\(`)
-      .replaceAll(")", String.raw`\)`)
-      .replaceAll("\r", String.raw`\r`)
-      .replaceAll("\n", String.raw`\n`);
+    let hasNonAscii = false;
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) > 127) {
+        hasNonAscii = true;
+        break;
+      }
+    }
+
+    let textOperand: string;
+    if (hasNonAscii) {
+      const hexStr = toWinAnsiHex(text);
+      textOperand = `<${hexStr}>`;
+    } else {
+      const escapedText = text
+        .replaceAll("\\", String.raw`\\`)
+        .replaceAll("(", String.raw`\(`)
+        .replaceAll(")", String.raw`\)`)
+        .replaceAll("\r", String.raw`\r`)
+        .replaceAll("\n", String.raw`\n`);
+      textOperand = `(${escapedText})`;
+    }
 
     const tcCode = letterSpacing !== 0 ? `${letterSpacing.toFixed(4)} Tc\n` : "";
     const resetTc = letterSpacing !== 0 ? `\n0.0000 Tc` : "";
@@ -204,12 +314,13 @@ export class PDFContentStream {
       twCode +
       `/${fontAlias} ${fontSize.toFixed(4)} Tf\n` +
       `1 0 0 1 ${x.toFixed(4)} ${y.toFixed(4)} Tm\n` +
-      `(${escapedText}) Tj` +
+      `${textOperand} Tj` +
       resetTw +
       resetTc +
       `\nET`;
     this.ops.push({ type: "raw", code });
   }
+
 
   drawTextHex(
     hexString: string,
@@ -220,7 +331,8 @@ export class PDFContentStream {
     letterSpacing = 0,
     wordSpacing = 0,
   ): void {
-    const tcCode = letterSpacing !== 0 ? `${letterSpacing.toFixed(4)} Tc\n` : "";
+    const tcCode =
+      letterSpacing !== 0 ? `${letterSpacing.toFixed(4)} Tc\n` : "";
     const resetTc = letterSpacing !== 0 ? `\n0.0000 Tc` : "";
     const twCode = wordSpacing !== 0 ? `${wordSpacing.toFixed(4)} Tw\n` : "";
     const resetTw = wordSpacing !== 0 ? `\n0.0000 Tw` : "";
@@ -257,7 +369,13 @@ export class PDFContentStream {
       bottomLeft: number;
     },
   ): void {
-    if (radii && (radii.topLeft > 0 || radii.topRight > 0 || radii.bottomRight > 0 || radii.bottomLeft > 0)) {
+    if (
+      radii &&
+      (radii.topLeft > 0 ||
+        radii.topRight > 0 ||
+        radii.bottomRight > 0 ||
+        radii.bottomLeft > 0)
+    ) {
       const pathCode = generateRoundedRectPath(x, y, width, height, radii);
       const code = `q\n${pathCode}\nW\nn`;
       this.ops.push({ type: "raw", code });
@@ -302,10 +420,11 @@ export class PDFContentStream {
     return lines.join("\n");
   }
 
-  private formatCustomTextOp(op: DrawCustomTextOp, gidResolver?: GidHexResolver): string {
-    const hex = gidResolver
-      ? gidResolver(op.fontName, op.text)
-      : op.text;
+  private formatCustomTextOp(
+    op: DrawCustomTextOp,
+    gidResolver?: GidHexResolver,
+  ): string {
+    const hex = gidResolver ? gidResolver(op.fontName, op.text) : op.text;
     const tcCode =
       op.letterSpacing && op.letterSpacing !== 0
         ? `${op.letterSpacing.toFixed(4)} Tc\n`
@@ -316,10 +435,10 @@ export class PDFContentStream {
       op.wordSpacing && op.wordSpacing !== 0
         ? `${op.wordSpacing.toFixed(4)} Tw\n`
         : "";
-    const resetTw =
-      op.wordSpacing && op.wordSpacing !== 0 ? `\n0.0000 Tw` : "";
+    const resetTw = op.wordSpacing && op.wordSpacing !== 0 ? `\n0.0000 Tw` : "";
 
-    return `BT\n` +
+    return (
+      `BT\n` +
       tcCode +
       twCode +
       `/${op.fontAlias} ${op.fontSize.toFixed(4)} Tf\n` +
@@ -327,7 +446,8 @@ export class PDFContentStream {
       `<${hex}> Tj` +
       resetTw +
       resetTc +
-      `\nET`;
+      `\nET`
+    );
   }
 
   toBytes(gidResolver?: GidHexResolver): Uint8Array {

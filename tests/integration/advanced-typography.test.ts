@@ -8,6 +8,7 @@ import { FontManager } from "../../src/fonts/font.js";
 import { applyTextTransform } from "../../src/css/computed-style.js";
 import { ElementNode } from "../../src/html/dom/node.js";
 import { createMinimalTTFBuffer } from "../fonts/ttf-parser.test.js";
+import { extractPdfText } from "../utils/pdf-text-extractor.js";
 
 const FIXTURES_DIR = path.resolve(
   process.cwd(),
@@ -133,8 +134,8 @@ describe("Phase 19 — Advanced Typography & Text Layout", () => {
         </html>
       `;
       const pdfBuffer = await HtmlToPdf.generateBuffer({ html, compress: false });
-      const pdfStr = pdfBuffer.toString("latin1");
-      expect(pdfStr).toContain("(TRANSFORM ME) Tj");
+      const extracted = extractPdfText(pdfBuffer);
+      expect(extracted).toContain("TRANSFORM ME");
     });
   });
 
@@ -191,9 +192,8 @@ describe("Phase 19 — Advanced Typography & Text Layout", () => {
         </html>
       `;
       const pdfBuffer = await HtmlToPdf.generateBuffer({ html, compress: false });
-      const pdfStr = pdfBuffer.toString("latin1");
-
-      expect(pdfStr).toContain("...) Tj");
+      const extracted = extractPdfText(pdfBuffer);
+      expect(extracted).toContain("...");
     });
   });
 

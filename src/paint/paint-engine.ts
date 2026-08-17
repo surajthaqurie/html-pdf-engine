@@ -131,13 +131,15 @@ export class PaintEngine {
     }
 
     // 1. Draw Background Color if present
-    this.paintBackgroundColor(box, commands, radii, pageIndex, zIndex, isFixed);
+    if (box.boxType !== "Text") {
+      this.paintBackgroundColor(box, commands, radii, pageIndex, zIndex, isFixed);
 
-    // 1b. Draw Background Image if present
-    this.paintBackgroundImage(box, commands, pageIndex, zIndex, isFixed);
+      // 1b. Draw Background Image if present
+      this.paintBackgroundImage(box, commands, pageIndex, zIndex, isFixed);
 
-    // 2. Draw Borders if present
-    this.paintBorders(box, commands, radii, pageIndex, zIndex, isFixed);
+      // 2. Draw Borders if present
+      this.paintBorders(box, commands, radii, pageIndex, zIndex, isFixed);
+    }
 
     // 3. Draw Image Content if present
     this.paintImageContent(box, commands, pageIndex, zIndex, isFixed);
@@ -164,13 +166,26 @@ export class PaintEngine {
   }
 
   private paintBackgroundColor(box: LayoutBox, commands: PaintCommand[], radii: BorderRadiusConfig | undefined, pageIndex: number, zIndex: number | "auto", isFixed: boolean) {
-    if (box.style.backgroundColor && box.style.backgroundColor.a !== 0 && box.width > 0 && box.height > 0) {
+    const dim = box.dimensions;
+    const pL = dim ? dim.padding.left : 0;
+    const pR = dim ? dim.padding.right : 0;
+    const pT = dim ? dim.padding.top : 0;
+    const pB = dim ? dim.padding.bottom : 0;
+    const bL = dim ? dim.border.left : 0;
+    const bR = dim ? dim.border.right : 0;
+    const bT = dim ? dim.border.top : 0;
+    const bB = dim ? dim.border.bottom : 0;
+
+    const borderBoxW = box.width + pL + pR + bL + bR;
+    const borderBoxH = box.height + pT + pB + bT + bB;
+
+    if (box.style.backgroundColor && box.style.backgroundColor.a !== 0 && borderBoxW > 0 && borderBoxH > 0) {
       commands.push({
         type: "rectangle",
         x: box.x,
         y: box.y,
-        width: box.width,
-        height: box.height,
+        width: borderBoxW,
+        height: borderBoxH,
         fillColor: box.style.backgroundColor,
         borderRadius: radii,
         pageIndex,
@@ -297,22 +312,35 @@ export class PaintEngine {
   }
 
   private paintBorders(box: LayoutBox, commands: PaintCommand[], radii: BorderRadiusConfig | undefined, pageIndex: number, zIndex: number | "auto", isFixed: boolean) {
+    const dim = box.dimensions;
+    const pL = dim ? dim.padding.left : 0;
+    const pR = dim ? dim.padding.right : 0;
+    const pT = dim ? dim.padding.top : 0;
+    const pB = dim ? dim.padding.bottom : 0;
+    const bL = dim ? dim.border.left : 0;
+    const bR = dim ? dim.border.right : 0;
+    const bT = dim ? dim.border.top : 0;
+    const bB = dim ? dim.border.bottom : 0;
+
+    const borderBoxW = box.width + pL + pR + bL + bR;
+    const borderBoxH = box.height + pT + pB + bT + bB;
+
     if (this.isUniformSolidBorder(box)) {
-      commands.push({ type: "rectangle", x: box.x, y: box.y, width: box.width, height: box.height, strokeColor: box.style.borderTopColor, lineWidth: box.style.borderTopWidth, borderRadius: radii, pageIndex, zIndex, isFixed });
+      commands.push({ type: "rectangle", x: box.x, y: box.y, width: borderBoxW, height: borderBoxH, strokeColor: box.style.borderTopColor, lineWidth: box.style.borderTopWidth, borderRadius: radii, pageIndex, zIndex, isFixed });
       return;
     }
 
     if (box.style.borderTopWidth > 0 && box.style.borderTopStyle !== "none") {
-      commands.push({ type: "line", x1: box.x, y1: box.y, x2: box.x + box.width, y2: box.y, strokeColor: box.style.borderTopColor, lineWidth: box.style.borderTopWidth, lineStyle: box.style.borderTopStyle as any, pageIndex, zIndex, isFixed });
+      commands.push({ type: "line", x1: box.x, y1: box.y, x2: box.x + borderBoxW, y2: box.y, strokeColor: box.style.borderTopColor, lineWidth: box.style.borderTopWidth, lineStyle: box.style.borderTopStyle as any, pageIndex, zIndex, isFixed });
     }
     if (box.style.borderRightWidth > 0 && box.style.borderRightStyle !== "none") {
-      commands.push({ type: "line", x1: box.x + box.width, y1: box.y, x2: box.x + box.width, y2: box.y + box.height, strokeColor: box.style.borderRightColor, lineWidth: box.style.borderRightWidth, lineStyle: box.style.borderRightStyle as any, pageIndex, zIndex, isFixed });
+      commands.push({ type: "line", x1: box.x + borderBoxW, y1: box.y, x2: box.x + borderBoxW, y2: box.y + borderBoxH, strokeColor: box.style.borderRightColor, lineWidth: box.style.borderRightWidth, lineStyle: box.style.borderRightStyle as any, pageIndex, zIndex, isFixed });
     }
     if (box.style.borderBottomWidth > 0 && box.style.borderBottomStyle !== "none") {
-      commands.push({ type: "line", x1: box.x, y1: box.y + box.height, x2: box.x + box.width, y2: box.y + box.height, strokeColor: box.style.borderBottomColor, lineWidth: box.style.borderBottomWidth, lineStyle: box.style.borderBottomStyle as any, pageIndex, zIndex, isFixed });
+      commands.push({ type: "line", x1: box.x, y1: box.y + borderBoxH, x2: box.x + borderBoxW, y2: box.y + borderBoxH, strokeColor: box.style.borderBottomColor, lineWidth: box.style.borderBottomWidth, lineStyle: box.style.borderBottomStyle as any, pageIndex, zIndex, isFixed });
     }
     if (box.style.borderLeftWidth > 0 && box.style.borderLeftStyle !== "none") {
-      commands.push({ type: "line", x1: box.x, y1: box.y, x2: box.x, y2: box.y + box.height, strokeColor: box.style.borderLeftColor, lineWidth: box.style.borderLeftWidth, lineStyle: box.style.borderLeftStyle as any, pageIndex, zIndex, isFixed });
+      commands.push({ type: "line", x1: box.x, y1: box.y, x2: box.x, y2: box.y + borderBoxH, strokeColor: box.style.borderLeftColor, lineWidth: box.style.borderLeftWidth, lineStyle: box.style.borderLeftStyle as any, pageIndex, zIndex, isFixed });
     }
   }
 

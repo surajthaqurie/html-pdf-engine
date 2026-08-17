@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { HtmlToPdf } from "../../src/core/html-to-pdf.js";
 import * as fs from "fs";
 import * as path from "path";
+import { extractPdfText } from "../utils/pdf-text-extractor.js";
 
 describe("HTML to PDF End-to-End Compiler Pipeline", () => {
   it("should convert simple HTML to a valid PDF buffer", async () => {
@@ -19,8 +20,9 @@ describe("HTML to PDF End-to-End Compiler Pipeline", () => {
 
     const pdfStr = buffer.toString("binary");
     expect(pdfStr).toContain("%PDF-1.7");
-    expect(pdfStr).toContain("(Invoice #1001) Tj");
-    expect(pdfStr).toContain("(John Doe) Tj");
+    const extracted = extractPdfText(buffer);
+    expect(extracted).toContain("Invoice #1001");
+    expect(extracted).toContain("John Doe");
   });
 
   it("should perform multi-page layout and pagination automatically when content overflows page", async () => {
@@ -51,9 +53,10 @@ describe("HTML to PDF End-to-End Compiler Pipeline", () => {
     const buffer = doc.save();
     const pdfStr = buffer.toString("binary");
 
-    expect(pdfStr).toContain("(Multi-Page Report) Tj");
-    expect(pdfStr).toContain(`(Page 1 of ${pages.length}) Tj`);
-    expect(pdfStr).toContain(`(Page ${pages.length} of ${pages.length}) Tj`);
+    const extracted = extractPdfText(buffer);
+    expect(extracted).toContain("Multi-Page Report");
+    expect(extracted).toContain(`Page 1 of ${pages.length}`);
+    expect(extracted).toContain(`Page ${pages.length} of ${pages.length}`);
 
     const outputDir = path.join(process.cwd(), "artifacts");
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
@@ -151,8 +154,9 @@ describe("HTML to PDF End-to-End Compiler Pipeline", () => {
     const buffer = doc.save();
     const pdfStr = buffer.toString("binary");
 
-    expect(pdfStr).toContain("(Inline Color Heading) Tj");
-    expect(pdfStr).toContain("(Card paragraph content.) Tj");
+    const extracted = extractPdfText(buffer);
+    expect(extracted).toContain("Inline Color Heading");
+    expect(extracted).toContain("Card paragraph content.");
   });
 
   it("should safely ignore <script>, <style>, <meta>, and <head> tags during layout rendering", async () => {
@@ -184,8 +188,9 @@ describe("HTML to PDF End-to-End Compiler Pipeline", () => {
     const doc = await HtmlToPdf.generate({ html, compress: false });
     const pdfStr = doc.save().toString("binary");
 
-    expect(pdfStr).toContain("(Rendered Content) Tj");
-    expect(pdfStr).not.toContain("Client-side script execution");
-    expect(pdfStr).not.toContain("alert(");
+    const extracted = extractPdfText(doc.save());
+    expect(extracted).toContain("Rendered Content");
+    expect(extracted).not.toContain("Client-side script execution");
+    expect(extracted).not.toContain("alert(");
   });
 });

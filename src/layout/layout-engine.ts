@@ -43,8 +43,10 @@ export interface LayoutResult {
   absChildren?: LayoutBox[];
 }
 
+const defaultMargins: PageMargins = { top: 36, right: 36, bottom: 36, left: 36 };
+
 export class LayoutEngine {
-  private defaultFontManager?: FontManager;
+  private readonly defaultFontManager?: FontManager;
 
   constructor(fontManager?: FontManager) {
     if (fontManager) {
@@ -57,7 +59,7 @@ export class LayoutEngine {
     cssRules: CSSRule[],
     pageWidth: number = 595.28,
     pageHeight: number = 841.89,
-    margins: PageMargins = { top: 36, right: 36, bottom: 36, left: 36 },
+    margins: PageMargins = defaultMargins,
     imagesMap?: Record<string, Buffer | string>,
     basePath?: string,
     fontManager?: FontManager,
@@ -192,18 +194,19 @@ export class LayoutEngine {
           const attrW = node.getAttribute("width");
           const attrH = node.getAttribute("height");
 
-          const targetW: number | "auto" =
-            style.width !== "auto"
-              ? style.width
-              : attrW
-                ? parseCssUnit(attrW, parentContentWidth)
-                : "auto";
-          const targetH: number | "auto" =
-            style.height !== "auto"
-              ? style.height
-              : attrH
-                ? parseCssUnit(attrH)
-                : "auto";
+          let targetW: number | "auto" = "auto";
+          if (style.width !== "auto") {
+            targetW = style.width;
+          } else if (attrW) {
+            targetW = parseCssUnit(attrW, parentContentWidth);
+          }
+
+          let targetH: number | "auto" = "auto";
+          if (style.height !== "auto") {
+            targetH = style.height;
+          } else if (attrH) {
+            targetH = parseCssUnit(attrH);
+          }
 
           let renderW = imageData.width;
           let renderH = imageData.height;
@@ -237,10 +240,16 @@ export class LayoutEngine {
               if (targetH === "auto") renderH = renderW * ratio;
             }
           }
-          if (style.minHeight !== "none" && typeof style.minHeight === "number") {
+          if (
+            style.minHeight !== "none" &&
+            typeof style.minHeight === "number"
+          ) {
             renderH = Math.max(renderH, style.minHeight);
           }
-          if (style.maxHeight !== "none" && typeof style.maxHeight === "number") {
+          if (
+            style.maxHeight !== "none" &&
+            typeof style.maxHeight === "number"
+          ) {
             if (renderH > style.maxHeight) {
               const ratio = renderW / renderH;
               renderH = style.maxHeight;
@@ -267,20 +276,20 @@ export class LayoutEngine {
         }
       }
 
-      const boxType =
-        style.display === "inline"
-          ? "Inline"
-          : style.display === "flex" || style.display === "inline-flex"
-            ? "Flex"
-            : style.display === "grid" || style.display === "inline-grid"
-              ? "Grid"
-              : style.display === "table"
-                ? "Table"
-                : style.display === "table-row"
-                  ? "TableRow"
-                  : style.display === "table-cell"
-                    ? "TableCell"
-                    : "Block";
+      let boxType: any = "Block";
+      if (style.display === "inline") {
+        boxType = "Inline";
+      } else if (style.display === "flex" || style.display === "inline-flex") {
+        boxType = "Flex";
+      } else if (style.display === "grid" || style.display === "inline-grid") {
+        boxType = "Grid";
+      } else if (style.display === "table") {
+        boxType = "Table";
+      } else if (style.display === "table-row") {
+        boxType = "TableRow";
+      } else if (style.display === "table-cell") {
+        boxType = "TableCell";
+      }
       const dimensions = createBoxDimensions(style, parentContentWidth);
       const box = new LayoutBox(boxType, style, node, dimensions);
       if (currentLinkUrl) box.linkUrl = currentLinkUrl;
@@ -325,10 +334,7 @@ export class LayoutEngine {
     parentContainerWidth?: number,
     parentCB?: ContainingBlockContext,
   ): LayoutResult {
-    if (
-      box.boxType === "Table" ||
-      box.style.display === "table"
-    ) {
+    if (box.boxType === "Table" || box.style.display === "table") {
       return this.layoutTableBox(
         box,
         startX,
@@ -483,8 +489,9 @@ export class LayoutEngine {
         }
       }
 
+      const textToUse = box.node.text.replace(/\s+/g, " ");
       const transformedText = applyTextTransform(
-        box.node.text,
+        textToUse,
         box.style.textTransform,
       );
 
@@ -492,6 +499,19 @@ export class LayoutEngine {
         parentContainerWidth && parentContainerWidth > 0
           ? parentContainerWidth
           : ctx.printableWidth;
+
+      // Helper: compute aligned X for a line given its measured width
+      const alignedLineX = (lineW: number, lineIndent: number = 0): number => {
+        const align = box.style.textAlign;
+        const availW = maxWrapWidth - lineIndent;
+        if (align === "center") {
+          return innerX + lineIndent + Math.max(0, (availW - lineW) / 2);
+        } else if (align === "right") {
+          return innerX + lineIndent + Math.max(0, availW - lineW);
+        }
+        // left / justify / default
+        return innerX + lineIndent;
+      };
 
       const isNowrap = box.style.whiteSpace === "nowrap";
 
@@ -542,14 +562,13 @@ export class LayoutEngine {
 
         box.textLines.push({
           text: textToRender,
-          x: innerX,
+          x: alignedLineX(measuredW),
           y: innerY,
           width: measuredW,
           height: lineHeight,
           pageIndex: pageIdx,
         });
 
-        innerY += lineHeight;
         contentHeight += lineHeight;
       } else if (isNowrap) {
         const indent = box.style.textIndent || 0;
@@ -562,22 +581,20 @@ export class LayoutEngine {
 
         box.textLines.push({
           text: transformedText,
-          x: innerX + indent,
+          x: alignedLineX(measuredW, indent),
           y: innerY,
           width: measuredW,
           height: lineHeight,
           pageIndex: pageIdx,
         });
 
-        innerY += lineHeight;
         contentHeight += lineHeight;
       } else {
         const words = transformedText.split(" ");
         let currentLineText = "";
         let currentLineWidth = 0;
 
-        for (let i = 0; i < words.length; i++) {
-          const word = words[i] ?? "";
+        for (const word of words) {
           const testText = currentLineText
             ? `${currentLineText} ${word}`
             : word;
@@ -603,7 +620,7 @@ export class LayoutEngine {
 
             box.textLines.push({
               text: currentLineText,
-              x: innerX + lineIndent,
+              x: alignedLineX(currentLineWidth, lineIndent),
               y: innerY,
               width: currentLineWidth,
               height: lineHeight,
@@ -638,22 +655,24 @@ export class LayoutEngine {
 
           box.textLines.push({
             text: currentLineText,
-            x: innerX + lineIndent,
+            x: alignedLineX(currentLineWidth, lineIndent),
             y: innerY,
             width: currentLineWidth,
             height: lineHeight,
             pageIndex: pageIdx,
           });
 
-          innerY += lineHeight;
           contentHeight += lineHeight;
         }
       }
     } else {
       // Child layout
-      const containerWidthForChild = dim
-        ? dim.contentWidth
-        : ctx.printableWidth;
+      let containerWidthForChild = ctx.printableWidth;
+      if (dim) {
+        containerWidthForChild = dim.contentWidth;
+      } else if (parentContainerWidth !== undefined && parentContainerWidth > 0) {
+        containerWidthForChild = parentContainerWidth;
+      }
       for (const child of box.children) {
         if (child.style.position === "absolute") {
           child.pageIndex = pageIdx;
@@ -681,7 +700,9 @@ export class LayoutEngine {
               x: box.x + borderLeft,
               y: box.y + borderTop,
               width:
-                (dim ? dim.contentWidth : ctx.printableWidth) +
+                (dim
+                  ? dim.contentWidth
+                  : (parentContainerWidth ?? ctx.printableWidth)) +
                 paddingLeft +
                 paddingRight,
               height: 0, // updated later
@@ -713,24 +734,49 @@ export class LayoutEngine {
         innerY = res.nextY;
         pageIdx = res.nextPageIndex;
       }
-      contentHeight = innerY - (currentY + borderTop + paddingTop);
+      contentHeight =
+        (pageIdx - box.pageIndex) * ctx.printableHeight +
+        innerY -
+        (currentY + borderTop + paddingTop);
     }
 
-    box.width = dim ? dim.contentWidth : ctx.printableWidth;
-    if (box.style.minWidth !== "none" && typeof box.style.minWidth === "number") {
-      box.width = Math.max(box.width, box.style.minWidth);
+    if (dim) {
+      box.width = dim.contentWidth;
+    } else if (parentContainerWidth !== undefined && parentContainerWidth > 0) {
+      box.width = parentContainerWidth;
+    } else {
+      box.width = ctx.printableWidth;
     }
-    if (box.style.maxWidth !== "none" && typeof box.style.maxWidth === "number") {
-      box.width = Math.min(box.width, box.style.maxWidth);
+    if (box.boxType !== "TableCell") {
+      if (
+        box.style.minWidth !== "none" &&
+        typeof box.style.minWidth === "number"
+      ) {
+        box.width = Math.max(box.width, box.style.minWidth);
+      }
+      if (
+        box.style.maxWidth !== "none" &&
+        typeof box.style.maxWidth === "number"
+      ) {
+        box.width = Math.min(box.width, box.style.maxWidth);
+      }
     }
 
     box.height =
       dim && dim.contentHeight > 0 ? dim.contentHeight : contentHeight;
-    if (box.style.minHeight !== "none" && typeof box.style.minHeight === "number") {
-      box.height = Math.max(box.height, box.style.minHeight);
-    }
-    if (box.style.maxHeight !== "none" && typeof box.style.maxHeight === "number") {
-      box.height = Math.min(box.height, box.style.maxHeight);
+    if (box.boxType !== "TableCell") {
+      if (
+        box.style.minHeight !== "none" &&
+        typeof box.style.minHeight === "number"
+      ) {
+        box.height = Math.max(box.height, box.style.minHeight);
+      }
+      if (
+        box.style.maxHeight !== "none" &&
+        typeof box.style.maxHeight === "number"
+      ) {
+        box.height = Math.min(box.height, box.style.maxHeight);
+      }
     }
 
     let finalY =
@@ -747,11 +793,7 @@ export class LayoutEngine {
 
     if (isClipped) {
       const boxTotalH =
-        borderTop +
-        paddingTop +
-        box.height +
-        paddingBottom +
-        borderBottom;
+        borderTop + paddingTop + box.height + paddingBottom + borderBottom;
       pageIdx =
         box.pageIndex +
         Math.floor((box.y + boxTotalH - ctx.margins.top) / ctx.printableHeight);
@@ -762,6 +804,7 @@ export class LayoutEngine {
     } else if (isAncestorClipped(box.parent)) {
       pageIdx = startPageIndex;
     } else {
+      pageIdx = box.pageIndex;
       while (finalY > ctx.margins.top + ctx.printableHeight) {
         pageIdx++;
         finalY -= ctx.printableHeight;
@@ -962,7 +1005,7 @@ export class LayoutEngine {
         } else if (typeof child.style.width === "number") {
           baseSize = child.style.width;
         } else {
-          const res = this.layoutBlockBox(child, 0, 0, pageIdx, ctx, undefined);
+          const res = this.layoutBlockBox(child, 0, 0, pageIdx, ctx);
           if (res.absChildren) localAbsChildren.push(...res.absChildren);
           baseSize = child.width;
         }
@@ -1005,18 +1048,16 @@ export class LayoutEngine {
           if (currentLineItems.length === 0) {
             currentLineItems.push(item);
             currentLineMainSize = itemTotalWidth;
+          } else if (
+            currentLineMainSize + mainGap + itemTotalWidth >
+            containerContentWidth
+          ) {
+            flexLines.push({ items: currentLineItems, crossSize: 0 });
+            currentLineItems = [item];
+            currentLineMainSize = itemTotalWidth;
           } else {
-            if (
-              currentLineMainSize + mainGap + itemTotalWidth >
-              containerContentWidth
-            ) {
-              flexLines.push({ items: currentLineItems, crossSize: 0 });
-              currentLineItems = [item];
-              currentLineMainSize = itemTotalWidth;
-            } else {
-              currentLineItems.push(item);
-              currentLineMainSize += mainGap + itemTotalWidth;
-            }
+            currentLineItems.push(item);
+            currentLineMainSize += mainGap + itemTotalWidth;
           }
         }
         if (currentLineItems.length > 0) {
@@ -1070,7 +1111,6 @@ export class LayoutEngine {
             0,
             pageIdx,
             ctx,
-            undefined,
           );
           if (res.absChildren) localAbsChildren.push(...res.absChildren);
         }
@@ -1239,7 +1279,7 @@ export class LayoutEngine {
 
       const colItems: ColItemInfo[] = [];
       for (const child of children) {
-        const res = this.layoutBlockBox(child, 0, 0, pageIdx, ctx, undefined);
+        const res = this.layoutBlockBox(child, 0, 0, pageIdx, ctx);
         if (res.absChildren) localAbsChildren.push(...res.absChildren);
         colItems.push({
           child,
@@ -1265,18 +1305,16 @@ export class LayoutEngine {
           if (currentLineItems.length === 0) {
             currentLineItems.push(item);
             currentLineHeight = item.totalHeight;
+          } else if (
+            currentLineHeight + mainGap + item.totalHeight >
+            maxMainHeight
+          ) {
+            colLines.push({ items: currentLineItems, crossSize: 0 });
+            currentLineItems = [item];
+            currentLineHeight = item.totalHeight;
           } else {
-            if (
-              currentLineHeight + mainGap + item.totalHeight >
-              maxMainHeight
-            ) {
-              colLines.push({ items: currentLineItems, crossSize: 0 });
-              currentLineItems = [item];
-              currentLineHeight = item.totalHeight;
-            } else {
-              currentLineItems.push(item);
-              currentLineHeight += mainGap + item.totalHeight;
-            }
+            currentLineItems.push(item);
+            currentLineHeight += mainGap + item.totalHeight;
           }
         }
         if (currentLineItems.length > 0) {
@@ -1433,14 +1471,14 @@ export class LayoutEngine {
 
     const innerX = box.x + borderLeft + paddingLeft;
     const innerY = currentY + borderTop + paddingTop;
-    const containerContentWidth =
-      typeof box.style.width === "number"
-        ? box.style.width
-        : box.width > 0
-          ? box.width
-          : dim
-            ? dim.contentWidth
-            : ctx.printableWidth;
+    let containerContentWidth = ctx.printableWidth;
+    if (typeof box.style.width === "number") {
+      containerContentWidth = box.style.width;
+    } else if (box.width > 0) {
+      containerContentWidth = box.width;
+    } else if (dim) {
+      containerContentWidth = dim.contentWidth;
+    }
 
     const localAbsChildren: LayoutBox[] = [];
     const flowChildren: LayoutBox[] = [];
@@ -1605,7 +1643,6 @@ export class LayoutEngine {
               0,
               pageIdx,
               ctx,
-              undefined,
             );
             if (res.absChildren) localAbsChildren.push(...res.absChildren);
             const getIntrinsicWidth = (b: LayoutBox): number => {
@@ -1827,8 +1864,7 @@ export class LayoutEngine {
       marginBottom;
 
     const isBreakAfter =
-      box.style.breakAfter === "page" ||
-      box.style.pageBreakAfter === "always";
+      box.style.breakAfter === "page" || box.style.pageBreakAfter === "always";
 
     if (isBreakAfter) {
       pageIdx++;
@@ -1922,14 +1958,14 @@ export class LayoutEngine {
 
     const innerX = box.x + borderLeft + paddingLeft;
     const innerY = currentY + borderTop + paddingTop;
-    const tableWidth =
-      typeof box.style.width === "number"
-        ? box.style.width
-        : box.width > 0
-          ? box.width
-          : dim && dim.contentWidth > 0
-            ? dim.contentWidth
-            : ctx.printableWidth;
+    let tableWidth = ctx.printableWidth;
+    if (typeof box.style.width === "number") {
+      tableWidth = box.style.width;
+    } else if (box.width > 0) {
+      tableWidth = box.width;
+    } else if (dim && dim.contentWidth > 0) {
+      tableWidth = dim.contentWidth;
+    }
 
     const localAbsChildren: LayoutBox[] = [];
 
@@ -1958,23 +1994,16 @@ export class LayoutEngine {
         } else if (disp === "table-row-group" || tag === "tbody") {
           collectRows(child, "body");
         } else if (
-          disp === "table-row" ||
-          child.boxType === "TableRow" ||
-          tag === "tr"
-        ) {
-          if (group === "header") headerRows.push(child);
-          else if (group === "footer") footerRows.push(child);
-          else bodyRows.push(child);
-        } else if (
-          child.children.some(
-            (c) => c.boxType === "TableRow" || c.style.display === "table-row",
-          )
+          !(disp === "table-row" || child.boxType === "TableRow" || tag === "tr") &&
+          child.children.some((c) => c.boxType === "TableRow" || c.style.display === "table-row")
         ) {
           collectRows(child, group);
+        } else if (group === "header") {
+          headerRows.push(child);
+        } else if (group === "footer") {
+          footerRows.push(child);
         } else {
-          if (group === "header") headerRows.push(child);
-          else if (group === "footer") footerRows.push(child);
-          else bodyRows.push(child);
+          bodyRows.push(child);
         }
       }
     };
@@ -2027,12 +2056,12 @@ export class LayoutEngine {
           const cs = cell.node.getAttribute("colspan");
           const rs = cell.node.getAttribute("rowspan");
           if (cs) {
-            const p = parseInt(cs, 10);
-            if (!isNaN(p) && p > 1) colspan = p;
+            const p = Number.parseInt(cs, 10);
+            if (!Number.isNaN(p) && p > 1) colspan = p;
           }
           if (rs) {
-            const p = parseInt(rs, 10);
-            if (!isNaN(p) && p > 1) rowspan = p;
+            const p = Number.parseInt(rs, 10);
+            if (!Number.isNaN(p) && p > 1) rowspan = p;
           }
         }
 
@@ -2089,23 +2118,98 @@ export class LayoutEngine {
       }
     }
 
-    if (autoColCount > 0) {
-      const remainingW = Math.max(0, tableWidth - totalExplicit);
-      const autoW = remainingW / autoColCount;
-      for (let i = 0; i < numCols; i++) {
-        if (explicitColWidths[i] === null) {
-          colWidths[i] = autoW;
+    const getTextContent = (node: any): string => {
+      if (node instanceof TextNode) {
+        return (node.text || "").replace(/\s+/g, " ");
+      }
+      let text = "";
+      if (node.children) {
+        for (const child of node.children) {
+          text += getTextContent(child);
         }
       }
-    } else if (totalExplicit > 0 && Math.abs(totalExplicit - tableWidth) > 0.1) {
+      return text;
+    };
+
+    const estWidths: number[] = new Array(numCols).fill(20);
+    for (const item of cellPositions) {
+      if (item.spanCols === 1) {
+        const text = getTextContent(item.cell.node);
+        const font = ctx.fontManager.resolveFont(
+          item.cell.style.fontFamily,
+          item.cell.style.fontWeight,
+          item.cell.style.fontStyle,
+        );
+        const fontSize = item.cell.style.fontSize;
+        const cellDim = item.cell.dimensions;
+        const pL = cellDim ? cellDim.padding.left : 0;
+        const pR = cellDim ? cellDim.padding.right : 0;
+        const bL = cellDim ? cellDim.border.left : 0;
+        const bR = cellDim ? cellDim.border.right : 0;
+        const extras = pL + pR + bL + bR;
+
+        const fullTextW =
+          font.measureTextWidth(
+            text,
+            fontSize,
+            item.cell.style.letterSpacing || 0,
+            item.cell.style.wordSpacing || 0,
+          ) + extras;
+
+        const words = text.split(/\s+/).filter(Boolean);
+        let maxWordW = 0;
+        for (const word of words) {
+          const wordW = font.measureTextWidth(
+            word,
+            fontSize,
+            item.cell.style.letterSpacing || 0,
+            item.cell.style.wordSpacing || 0,
+          );
+          maxWordW = Math.max(maxWordW, wordW);
+        }
+        const minW = maxWordW + extras;
+
+        let desiredW = fullTextW;
+        if (item.cell.style.whiteSpace !== "nowrap") {
+          desiredW = Math.min(fullTextW, 120);
+        }
+
+        let cellEst = Math.max(minW, desiredW);
+        if (
+          item.cell.style.minWidth !== "none" &&
+          typeof item.cell.style.minWidth === "number"
+        ) {
+          cellEst = Math.max(cellEst, item.cell.style.minWidth);
+        }
+
+        estWidths[item.col] = Math.max(estWidths[item.col]!, cellEst);
+      }
+    }
+
+    if (autoColCount > 0) {
+      const remainingW = Math.max(0, tableWidth - totalExplicit);
+      let totalEst = 0;
+      for (let i = 0; i < numCols; i++) {
+        if (explicitColWidths[i] === null) {
+          totalEst += estWidths[i]!;
+        }
+      }
+      for (let i = 0; i < numCols; i++) {
+        if (explicitColWidths[i] === null) {
+          if (totalEst > 0) {
+            colWidths[i] = (estWidths[i]! / totalEst) * remainingW;
+          } else {
+            colWidths[i] = remainingW / autoColCount;
+          }
+        }
+      }
+    } else if (
+      totalExplicit > 0 &&
+      Math.abs(totalExplicit - tableWidth) > 0.1
+    ) {
       const scale = tableWidth / totalExplicit;
       for (let i = 0; i < numCols; i++) {
         colWidths[i] = colWidths[i]! * scale;
-      }
-    } else if (totalExplicit === 0) {
-      const autoW = tableWidth / numCols;
-      for (let i = 0; i < numCols; i++) {
-        colWidths[i] = autoW;
       }
     }
 
@@ -2128,8 +2232,8 @@ export class LayoutEngine {
       if (onPlacePage) onPlacePage(rowBox, rowPageIdx);
 
       let maxRowH = 0;
-      const rowCells = cellPositions.filter(
-        (cp) => rowBox.children.includes(cp.cell),
+      const rowCells = cellPositions.filter((cp) =>
+        rowBox.children.includes(cp.cell),
       );
 
       for (const item of rowCells) {
@@ -2186,10 +2290,7 @@ export class LayoutEngine {
         const bT = cellDim ? cellDim.border.top : 0;
         const bB = cellDim ? cellDim.border.bottom : 0;
         const oldContentH = item.cell.height;
-        const newContentH = Math.max(
-          oldContentH,
-          maxRowH - pT - pB - bT - bB,
-        );
+        const newContentH = Math.max(oldContentH, maxRowH - pT - pB - bT - bB);
         item.cell.height = newContentH;
 
         const vAlign = item.cell.style.verticalAlign;
@@ -2233,26 +2334,13 @@ export class LayoutEngine {
 
       const rH = layoutRow(bRow, currRowY, currPageIdx);
 
-      if (isTrBreakBefore && currRowY > ctx.margins.top) {
-        currPageIdx++;
-        currRowY = ctx.margins.top;
+      const needsPageBreak =
+        (isTrBreakBefore && currRowY > ctx.margins.top) ||
+        ((currRowY + rH > printableBottom || isTrBreakInsideAvoid) &&
+          currRowY + rH > printableBottom &&
+          currRowY > ctx.margins.top);
 
-        if (headerRows.length > 0) {
-          const headerDy = currRowY - innerY;
-          const headerPageDelta = currPageIdx - pageIdx;
-          for (const hRow of headerRows) {
-            const clonedH = cloneLayoutBox(hRow, headerDy, headerPageDelta);
-            box.addChild(clonedH);
-            currRowY += clonedH.height;
-          }
-        }
-        layoutRow(bRow, currRowY, currPageIdx);
-        currRowY += bRow.height;
-      } else if (
-        (currRowY + rH > printableBottom || isTrBreakInsideAvoid) &&
-        currRowY + rH > printableBottom &&
-        currRowY > ctx.margins.top
-      ) {
+      if (needsPageBreak) {
         currPageIdx++;
         currRowY = ctx.margins.top;
 
@@ -2323,8 +2411,7 @@ export class LayoutEngine {
       marginBottom;
 
     const isBreakAfter =
-      box.style.breakAfter === "page" ||
-      box.style.pageBreakAfter === "always";
+      box.style.breakAfter === "page" || box.style.pageBreakAfter === "always";
 
     if (isBreakAfter) {
       currPageIdx++;
@@ -2570,8 +2657,9 @@ export class LayoutEngine {
         }
       }
 
+      const textToUse = box.node.text.replace(/\s+/g, " ");
       const transformedText = applyTextTransform(
-        box.node.text,
+        textToUse,
         box.style.textTransform,
       );
       const maxWrapWidth =
@@ -2585,8 +2673,7 @@ export class LayoutEngine {
       let lineCount = 0;
       let currentLineText = "";
 
-      for (let i = 0; i < words.length; i++) {
-        const word = words[i] ?? "";
+      for (const word of words) {
         const testText = currentLineText ? `${currentLineText} ${word}` : word;
         const testWidth = font.measureTextWidth(
           testText,
@@ -2610,12 +2697,12 @@ export class LayoutEngine {
       return Math.max(1, lineCount) * lineHeight + verticalExtras;
     }
 
-    const containerContentWidth =
-      dim && dim.contentWidth > 0
-        ? dim.contentWidth
-        : parentContainerWidth > 0
-          ? parentContainerWidth
-          : ctx.printableWidth;
+    let containerContentWidth = ctx.printableWidth;
+    if (dim && dim.contentWidth > 0) {
+      containerContentWidth = dim.contentWidth;
+    } else if (parentContainerWidth > 0) {
+      containerContentWidth = parentContainerWidth;
+    }
 
     if (
       box.boxType === "Flex" ||
@@ -2678,14 +2765,24 @@ export class LayoutEngine {
     let contentHeight = 0;
     for (const child of box.children) {
       if (child.style.position === "absolute") continue;
-      contentHeight += this.estimateBoxHeight(child, containerContentWidth, ctx);
+      contentHeight += this.estimateBoxHeight(
+        child,
+        containerContentWidth,
+        ctx,
+      );
     }
 
     let estH = contentHeight;
-    if (box.style.minHeight !== "none" && typeof box.style.minHeight === "number") {
+    if (
+      box.style.minHeight !== "none" &&
+      typeof box.style.minHeight === "number"
+    ) {
       estH = Math.max(estH, box.style.minHeight);
     }
-    if (box.style.maxHeight !== "none" && typeof box.style.maxHeight === "number") {
+    if (
+      box.style.maxHeight !== "none" &&
+      typeof box.style.maxHeight === "number"
+    ) {
       estH = Math.min(estH, box.style.maxHeight);
     }
 
@@ -2731,10 +2828,7 @@ function cloneLayoutBox(
 function isAncestorClipped(box: LayoutBox | null): boolean {
   let curr = box;
   while (curr) {
-    if (
-      curr.style.overflow === "hidden" ||
-      curr.style.overflowY === "hidden"
-    ) {
+    if (curr.style.overflow === "hidden" || curr.style.overflowY === "hidden") {
       return true;
     }
     curr = curr.parent;
@@ -2753,5 +2847,3 @@ function shiftBoxVertical(box: LayoutBox, deltaY: number): void {
     }
   }
 }
-
-

@@ -6,7 +6,9 @@ describe("Phase 6 — PDF Document Structure & Conformance Verification", () => 
   it("should output valid PDF 1.7 structural catalog, pages, font, and trailer", () => {
     const doc = new PDFDocument();
     doc.setCompress(false);
-    doc.addPage("A4");
+    const page = doc.addPage("A4");
+    doc.addFont("Helvetica");
+    page.drawText("A", 10, 10, { fontName: "Helvetica" });
 
     const buffer = doc.save();
     const pdfStr = buffer.toString("binary");

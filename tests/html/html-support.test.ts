@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { HTMLParser } from "../../src/html/parser.js";
 import { ElementNode, TextNode } from "../../src/html/dom/node.js";
 import { HtmlToPdf } from "../../src/core/html-to-pdf.js";
+import { extractPdfText } from "../utils/pdf-text-extractor.js";
 
 describe("Phase 2 — Comprehensive HTML Element Support & Resilience", () => {
   const parser = new HTMLParser();
@@ -26,10 +27,10 @@ describe("Phase 2 — Comprehensive HTML Element Support & Resilience", () => {
       <h6>Heading 6</h6>
     `;
     const pdfDoc = await HtmlToPdf.generate({ html, compress: false });
-    const pdfStr = pdfDoc.save().toString("binary");
-
-    expect(pdfStr).toContain("(Heading 1) Tj");
-    expect(pdfStr).toContain("(Heading 6) Tj");
+    const pdfBuf = pdfDoc.save();
+    const extracted = extractPdfText(pdfBuf);
+    expect(extracted).toContain("Heading 1");
+    expect(extracted).toContain("Heading 6");
   });
 
   it("should parse lists (ul, ol, li) correctly", async () => {
@@ -43,10 +44,10 @@ describe("Phase 2 — Comprehensive HTML Element Support & Resilience", () => {
       </ol>
     `;
     const pdfDoc = await HtmlToPdf.generate({ html, compress: false });
-    const pdfStr = pdfDoc.save().toString("binary");
-
-    expect(pdfStr).toContain("(Unordered item 1) Tj");
-    expect(pdfStr).toContain("(Ordered item 1) Tj");
+    const pdfBuf = pdfDoc.save();
+    const extracted = extractPdfText(pdfBuf);
+    expect(extracted).toContain("Unordered item 1");
+    expect(extracted).toContain("Ordered item 1");
   });
 
   it("should parse tables (table, thead, tbody, tfoot, tr, th, td)", async () => {
@@ -64,11 +65,11 @@ describe("Phase 2 — Comprehensive HTML Element Support & Resilience", () => {
       </table>
     `;
     const pdfDoc = await HtmlToPdf.generate({ html, compress: false });
-    const pdfStr = pdfDoc.save().toString("binary");
-
-    expect(pdfStr).toContain("(Item) Tj");
-    expect(pdfStr).toContain("(Widget) Tj");
-    expect(pdfStr).toContain("($10.00) Tj");
+    const pdfBuf = pdfDoc.save();
+    const extracted = extractPdfText(pdfBuf);
+    expect(extracted).toContain("Item");
+    expect(extracted).toContain("Widget");
+    expect(extracted).toContain("$10.00");
   });
 
   it("should handle links (a) and text formatting (strong, b, em, i)", async () => {
@@ -79,11 +80,11 @@ describe("Phase 2 — Comprehensive HTML Element Support & Resilience", () => {
       </p>
     `;
     const pdfDoc = await HtmlToPdf.generate({ html, compress: false });
-    const pdfStr = pdfDoc.save().toString("binary");
-
-    expect(pdfStr).toContain("(Example Site) Tj");
-    expect(pdfStr).toContain("(Bold) Tj");
-    expect(pdfStr).toContain("(Italic) Tj");
+    const pdfBuf = pdfDoc.save();
+    const extracted = extractPdfText(pdfBuf);
+    expect(extracted).toContain("Example Site");
+    expect(extracted).toContain("Bold");
+    expect(extracted).toContain("Italic");
   });
 
   it("should handle malformed HTML gracefully without throwing", () => {

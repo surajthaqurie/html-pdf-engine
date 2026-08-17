@@ -3,6 +3,7 @@ import { LayoutEngine } from "../../src/layout/layout-engine.js";
 import { HTMLParser } from "../../src/html/parser.js";
 import { CSSParser } from "../../src/css/parser.js";
 import { HtmlToPdf } from "../../src/index.js";
+import { extractPdfText } from "../utils/pdf-text-extractor.js";
 
 describe("Phase 3: CSS Flexbox Layout Engine Integration Tests", () => {
   const htmlParser = new HTMLParser();
@@ -27,7 +28,7 @@ describe("Phase 3: CSS Flexbox Layout Engine Integration Tests", () => {
       left: 36,
     });
 
-    expect(boxes.length).toBe(1);
+    expect(boxes).toHaveLength(1);
     const root = boxes[0];
     const headerBox = root?.children[0];
     expect(headerBox).toBeDefined();
@@ -113,8 +114,9 @@ describe("Phase 3: CSS Flexbox Layout Engine Integration Tests", () => {
     });
 
     const pdfContent = pdfBuffer.toString("latin1");
-    expect(pdfContent).toContain("ACME CORP");
-    expect(pdfContent).toContain("Invoice #1001");
+    const extracted = extractPdfText(pdfBuffer);
+    expect(extracted).toContain("ACME CORP");
+    expect(extracted).toContain("Invoice #1001");
     expect(pdfContent).toContain("/PDF");
   });
 });

@@ -8,10 +8,6 @@
 
 All notable changes to html-pdf-engine will be documented here.
 
-## [Unreleased]
-
-## [1.0.1] - Unreleased
-
 ### Fixed
 
 - **Documentation**: Comprehensive documentation audit correcting inaccurate claims. Documented the previously unlisted SVG vector rendering capabilities, clarified CSS `@page` override behaviors, and provided full public API typings.

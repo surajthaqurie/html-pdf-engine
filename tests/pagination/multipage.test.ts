@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { HtmlToPdf } from "../../src/core/html-to-pdf.js";
+import { extractPdfText } from "../utils/pdf-text-extractor.js";
 
 describe("Phase 5 — Multi-Page PDF Generation & Pagination Edge Cases", () => {
   it("should split content across multiple pages when vertical content overflows page height", async () => {
@@ -28,11 +29,11 @@ describe("Phase 5 — Multi-Page PDF Generation & Pagination Edge Cases", () => 
 
     const doc = await HtmlToPdf.generate({ html, compress: false });
     const pages = doc.getPages();
-    expect(pages.length).toBe(2);
+    expect(pages).toHaveLength(2);
 
-    const pdfStr = doc.save().toString("binary");
-    expect(pdfStr).toContain("(Page 1 Content) Tj");
-    expect(pdfStr).toContain("(Page 2 Content) Tj");
+    const extracted = extractPdfText(doc.save());
+    expect(extracted).toContain("Page 1 Content");
+    expect(extracted).toContain("Page 2 Content");
   });
 
   it("should format repeated headers and footers on every page of multi-page PDF", async () => {
@@ -51,9 +52,9 @@ describe("Phase 5 — Multi-Page PDF Generation & Pagination Edge Cases", () => 
     const totalPages = doc.getPages().length;
     expect(totalPages).toBeGreaterThan(1);
 
-    const pdfStr = doc.save().toString("binary");
-    expect(pdfStr).toContain("(Corporate Audit) Tj");
-    expect(pdfStr).toContain(`(Page 1 of ${totalPages}) Tj`);
-    expect(pdfStr).toContain(`(Page ${totalPages} of ${totalPages}) Tj`);
+    const extracted = extractPdfText(doc.save());
+    expect(extracted).toContain("Corporate Audit");
+    expect(extracted).toContain(`Page 1 of ${totalPages}`);
+    expect(extracted).toContain(`Page ${totalPages} of ${totalPages}`);
   });
 });

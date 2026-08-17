@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { HtmlToPdf } from "../../src/index.js";
 import { createMinimalTTFBuffer } from "../fonts/ttf-parser.test.js";
+import { extractPdfText } from "../utils/pdf-text-extractor.js";
 
 describe("Phase 13 — Advanced Table Pagination & Repeating Headers", () => {
   // 1. Single-page table regression
@@ -22,8 +23,8 @@ describe("Phase 13 — Advanced Table Pagination & Repeating Headers", () => {
     `;
     const doc = await HtmlToPdf.generate({ html, compress: false });
     expect(doc.getPages().length).toBe(1);
-    const pdfStr = doc.save().toString("binary");
-    expect(pdfStr).toContain("(Header Col 1) Tj");
+    const extracted = extractPdfText(doc.save());
+    expect(extracted).toContain("Header Col 1");
   });
 
   // 2. Multi-page table
@@ -70,9 +71,8 @@ describe("Phase 13 — Advanced Table Pagination & Repeating Headers", () => {
     `;
     const doc = await HtmlToPdf.generate({ html, compress: false });
     expect(doc.getPages().length).toBeGreaterThanOrEqual(2);
-    const pdfStr = doc.save().toString("binary");
-
-    const matches = pdfStr.match(/\(Unique Header Column A\) Tj/g);
+    const extracted = extractPdfText(doc.save());
+    const matches = extracted.match(/Unique Header Column A/g);
     expect(matches).not.toBeNull();
     expect(matches!.length).toBeGreaterThanOrEqual(2);
   });
@@ -99,10 +99,9 @@ describe("Phase 13 — Advanced Table Pagination & Repeating Headers", () => {
     `;
     const doc = await HtmlToPdf.generate({ html, compress: false });
     expect(doc.getPages().length).toBeGreaterThanOrEqual(2);
-    const pdfStr = doc.save().toString("binary");
-
-    const matchesTop = pdfStr.match(/\(Main Category Section\) Tj/g);
-    const matchesSub = pdfStr.match(/\(Product Name\) Tj/g);
+    const extracted = extractPdfText(doc.save());
+    const matchesTop = extracted.match(/Main Category Section/g);
+    const matchesSub = extracted.match(/Product Name/g);
     expect(matchesTop!.length).toBeGreaterThanOrEqual(2);
     expect(matchesSub!.length).toBeGreaterThanOrEqual(2);
   });
@@ -362,8 +361,8 @@ describe("Phase 13 — Advanced Table Pagination & Repeating Headers", () => {
     `;
     const doc = await HtmlToPdf.generate({ html, compress: false });
     expect(doc.getPages().length).toBe(1);
-    const pdfStr = doc.save().toString("binary");
-    expect(pdfStr).toContain("(Flex Table Header) Tj");
+    const extracted = extractPdfText(doc.save());
+    expect(extracted).toContain("Flex Table Header");
   });
 
   // 16. Table inside flex-wrap
@@ -403,8 +402,8 @@ describe("Phase 13 — Advanced Table Pagination & Repeating Headers", () => {
     `;
     const doc = await HtmlToPdf.generate({ html, compress: false });
     expect(doc.getPages().length).toBe(1);
-    const pdfStr = doc.save().toString("binary");
-    expect(pdfStr).toContain("(Grid Table Header) Tj");
+    const extracted = extractPdfText(doc.save());
+    expect(extracted).toContain("Grid Table Header");
   });
 
   // 18. Nested Grid inside table cell
@@ -429,8 +428,8 @@ describe("Phase 13 — Advanced Table Pagination & Repeating Headers", () => {
     `;
     const doc = await HtmlToPdf.generate({ html, compress: false });
     expect(doc.getPages().length).toBe(1);
-    const pdfStr = doc.save().toString("binary");
-    expect(pdfStr).toContain("(Cell Grid Left) Tj");
+    const extracted = extractPdfText(doc.save());
+    expect(extracted).toContain("Cell Grid Left");
   });
 
   // 19. Nested Flexbox inside table cell
@@ -455,8 +454,8 @@ describe("Phase 13 — Advanced Table Pagination & Repeating Headers", () => {
     `;
     const doc = await HtmlToPdf.generate({ html, compress: false });
     expect(doc.getPages().length).toBe(1);
-    const pdfStr = doc.save().toString("binary");
-    expect(pdfStr).toContain("(Flex Item 1) Tj");
+    const extracted = extractPdfText(doc.save());
+    expect(extracted).toContain("Flex Item 1");
   });
 
   // 20. Nested tables
@@ -482,9 +481,9 @@ describe("Phase 13 — Advanced Table Pagination & Repeating Headers", () => {
     `;
     const doc = await HtmlToPdf.generate({ html, compress: false });
     expect(doc.getPages().length).toBe(1);
-    const pdfStr = doc.save().toString("binary");
-    expect(pdfStr).toContain("(Outer Header) Tj");
-    expect(pdfStr).toContain("(Inner Header) Tj");
+    const extracted = extractPdfText(doc.save());
+    expect(extracted).toContain("Outer Header");
+    expect(extracted).toContain("Inner Header");
   });
 
   // 21. Explicit break-before
@@ -621,9 +620,9 @@ describe("Phase 13 — Advanced Table Pagination & Repeating Headers", () => {
       footer: { text: "Page {{pageNumber}} of {{totalPages}}", align: "center" },
     });
     expect(doc.getPages().length).toBeGreaterThanOrEqual(2);
-    const pdfStr = doc.save().toString("binary");
-    expect(pdfStr).toContain("(PDF Document Header) Tj");
-    expect(pdfStr).toContain("(Table Header Text) Tj");
+    const extracted = extractPdfText(doc.save());
+    expect(extracted).toContain("PDF Document Header");
+    expect(extracted).toContain("Table Header Text");
   });
 
   // 28. Dynamic page numbers
@@ -648,9 +647,9 @@ describe("Phase 13 — Advanced Table Pagination & Repeating Headers", () => {
     });
     const pageCount = doc.getPages().length;
     expect(pageCount).toBeGreaterThanOrEqual(2);
-    const pdfStr = doc.save().toString("binary");
-    expect(pdfStr).toContain(`(Page 1 of ${pageCount}) Tj`);
-    expect(pdfStr).toContain(`(Page 2 of ${pageCount}) Tj`);
+    const extracted = extractPdfText(doc.save());
+    expect(extracted).toContain(`Page 1 of ${pageCount}`);
+    expect(extracted).toContain(`Page 2 of ${pageCount}`);
   });
 
   // 29. Deterministic PDF output
@@ -696,8 +695,8 @@ describe("Phase 13 — Advanced Table Pagination & Repeating Headers", () => {
     `;
     const doc = await HtmlToPdf.generate({ html, compress: false });
     expect(doc.getPages().length).toBe(1);
-    const pdfStr = doc.save().toString("binary");
-    expect(pdfStr).toContain("(System Performance Matrix) Tj");
-    expect(pdfStr).toContain("(HTML Tokenizer) Tj");
+    const extracted = extractPdfText(doc.save());
+    expect(extracted).toContain("System Performance Matrix");
+    expect(extracted).toContain("HTML Tokenizer");
   });
 });

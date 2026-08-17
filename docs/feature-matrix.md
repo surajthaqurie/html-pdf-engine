@@ -1,6 +1,6 @@
 # Feature Support Matrix: html-pdf-engine
 
-This document details the feature support matrix for `html-pdf-engine` (v1.0.0). Feature support is determined based on actual implementation and automated test coverage in the codebase.
+This document details the feature support matrix for `html-pdf-engine` (v1.0.1). Feature support is determined based on actual implementation and automated test coverage in the codebase.
 
 Status Levels:
 - **SUPPORTED**: Fully implemented, verified in automated test suite.
@@ -47,7 +47,7 @@ Status Levels:
 | **CSS Inheritance** | **SUPPORTED** | Inherits `font-family`, `font-size`, `color`, `line-height` from parent nodes. |
 | **Color Functions** (`Hex`, `RGB`, `RGBA`, `HSL`, `HSLA`, Named) | **SUPPORTED** | Hex (`#rgb`, `#rrggbb`, `#rgba`, `#rrggbbaa`), `rgb()`, `rgba()`, `hsl()`, `hsla()`, named colors, and `transparent` fallback handling. |
 | **Backgrounds** (`background-color`, `background-image`, `background-position`, `background-size`, `background-repeat`, `background` shorthand) | **SUPPORTED** | Background color, image URL rendering, tiling (`repeat`, `repeat-x`, `repeat-y`, `no-repeat`), scaling (`cover`, `contain`), and position offsets (`top`, `bottom`, `left`, `right`, `center`). |
-| **Built-in PDF Type1 Fonts** | **SUPPORTED** | Standard PDF Type1 fonts: `Helvetica` (+ Bold, Oblique, BoldOblique), `Times-Roman` (+ Bold, Italic, BoldItalic), `Courier` (+ Bold, Oblique, BoldOblique). |
+| **Built-in & System Fonts** | **SUPPORTED** | Automatically uses high-quality system TTF fonts (Liberation, DejaVu, FreeFont) if available. Falls back to standard Type1 fonts: `Helvetica`, `Times-Roman`, `Courier`. |
 | **Custom Font Embedding — TTF** | **SUPPORTED** | TrueType Font (`.ttf`) embedding via `options.fonts` or `@font-face` CSS rule. Parsed as Type0/CIDFontType2 with glyph subsetting and `/ToUnicode` CMaps. |
 | **Custom Font Embedding — OpenType/TTF outline** | **SUPPORTED** | OpenType fonts using TrueType glyph outlines (`.otf` files with `glyf` table) are accepted and parsed identically to TTF. OpenType files using CFF (PostScript) outlines are not separately handled and may fail to parse. |
 | **Custom Font Embedding — WOFF / WOFF2** | **UNSUPPORTED** | Web font formats WOFF and WOFF2 are explicitly rejected. The `@font-face` parser throws a `FontError` for `.woff`/`.woff2` file extensions or `format("woff")`/`format("woff2")` declarations. |

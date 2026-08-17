@@ -28,12 +28,45 @@ export class CSSParser {
       }
       if (index >= length) break;
 
-      // Find selector or at-rule up to '{'
-      const braceOpen = css.indexOf("{", index);
-      if (braceOpen === -1) break;
+      // Find the first unquoted, unparenthesized '{' or ';' starting from index
+      let braceOpenIdx = -1;
+      let semiColonIdx = -1;
+      let inSingleQuote = false;
+      let inDoubleQuote = false;
+      let parenDepth = 0;
 
-      const header = css.slice(index, braceOpen).trim();
-      const contentStart = braceOpen + 1;
+      for (let i = index; i < length; i++) {
+        const char = css[i];
+        if (char === "'" && !inDoubleQuote) {
+          inSingleQuote = !inSingleQuote;
+        } else if (char === '"' && !inSingleQuote) {
+          inDoubleQuote = !inDoubleQuote;
+        } else if (!inSingleQuote && !inDoubleQuote) {
+          if (char === "(") {
+            parenDepth++;
+          } else if (char === ")") {
+            if (parenDepth > 0) parenDepth--;
+          } else if (parenDepth === 0) {
+            if (char === "{") {
+              braceOpenIdx = i;
+              break;
+            } else if (char === ";" && semiColonIdx === -1) {
+              semiColonIdx = i;
+            }
+          }
+        }
+      }
+
+      if (semiColonIdx !== -1 && (braceOpenIdx === -1 || semiColonIdx < braceOpenIdx)) {
+        // Found a statement ending with a semicolon before any block opening '{'
+        index = semiColonIdx + 1;
+        continue;
+      }
+
+      if (braceOpenIdx === -1) break;
+
+      const header = css.slice(index, braceOpenIdx).trim();
+      const contentStart = braceOpenIdx + 1;
 
       // Find matching closing brace '}' considering nesting
       let depth = 1;
@@ -94,9 +127,12 @@ export class CSSParser {
       if (colonIdx === -1) continue;
 
       const rawKey = pair.slice(0, colonIdx).trim();
-      const value = pair.slice(colonIdx + 1).trim();
+      let value = pair.slice(colonIdx + 1).trim();
 
       if (!rawKey || !value) continue;
+
+      // Strip !important from value for unit/color parsing compatibility
+      value = value.replace(/\s*!important\s*$/i, "");
 
       // Keep custom property names case-preserving (e.g. --primaryColor), standard properties lowercase
       const key = rawKey.startsWith("--") ? rawKey : rawKey.toLowerCase();

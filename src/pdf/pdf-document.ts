@@ -85,10 +85,22 @@ export class PDFDocument {
   private viewerPreferences?: PdfViewerPreferences;
   private pageLabelRanges: PageLabelRange[] = [];
   private readonly destinations: Map<string, PDFDestination> = new Map();
+  /** FontManager provided by the caller (has system + user-registered fonts). */
+  private _fontManager: FontManager = new FontManager();
+
 
   constructor() {
-    // Default register standard Helvetica font as F1
-    this.addFont("Helvetica", "F1");
+    // Fonts are registered lazily via addFont() when the layout engine encounters text.
+    // No default font pre-registration needed.
+  }
+
+  /**
+   * Sets the FontManager to use when building font objects during save().
+   * Must be called with the same FontManager used during layout/paint so that
+   * system-registered fonts (Liberation Sans, etc.) are properly embedded.
+   */
+  setFontManager(fm: FontManager): void {
+    this._fontManager = fm;
   }
 
   registerFontUsage(fontName: string, text: string): void {
@@ -192,10 +204,12 @@ export class PDFDocument {
   }
 
   addFont(fontName: string, alias?: string): string {
-    const fontAlias = alias ?? `F${this.fontMap.size + 1}`;
-    if (!this.fontMap.has(fontName)) {
-      this.fontMap.set(fontName, { fontName, alias: fontAlias });
+    const existing = this.fontMap.get(fontName);
+    if (existing) {
+      return existing.alias;
     }
+    const fontAlias = alias ?? `F${this.fontMap.size + 1}`;
+    this.fontMap.set(fontName, { fontName, alias: fontAlias });
     return fontAlias;
   }
 
@@ -372,7 +386,8 @@ export class PDFDocument {
     fontDictRefs: Record<string, PDFRef>,
     codePointToGidMaps: Map<string, Map<number, number>>
   ) {
-    const fontManager = new FontManager();
+    // Use the FontManager provided by the caller (has system + user fonts registered)
+    const fontManager = this._fontManager;
     for (const [fontName, info] of this.fontMap.entries()) {
       const font = fontManager.getFont(fontName);
       if (font.isCustom && font.parsedTTF) {
@@ -395,6 +410,7 @@ export class PDFDocument {
         fontIndirectObjs.push(fontObj);
         fontDictRefs[info.alias] = fontObj.ref;
       } else {
+        // Standard PDF font (no embedding) — fallback only
         const fontObjNum = this.nextObjectNumber++;
         info.objNum = fontObjNum;
         const pdfFont = new PDFFont(info.alias, fontName);

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { HtmlToPdf, PDFDocument } from "../../src/index.js";
+import { extractPdfText } from "../utils/pdf-text-extractor.js";
 
 describe("Phase 21 — Production PDF Document Features, Navigation & Serialization Hardening", () => {
   describe("1. PDF Document Metadata & Escaping", () => {
@@ -207,7 +208,8 @@ describe("Phase 21 — Production PDF Document Features, Navigation & Serializat
       const pdfStr = buffer.toString("latin1");
 
       expect(pdfStr).not.toContain("/Subtype /Link");
-      expect(pdfStr).toContain("Broken Link");
+      const extracted = extractPdfText(buffer);
+      expect(extracted).toContain("Broken Link");
     });
 
     it("supports tel: external links along with http, https, and mailto", async () => {

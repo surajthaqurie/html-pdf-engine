@@ -122,8 +122,13 @@ export class PDFPage {
     let pdfY = y;
 
     if (useHtmlCoords) {
-      // In HTML, y is the top of text box. Baseline is approx y + fontSize * 0.8
-      pdfY = this.height - y - fontSize;
+      // In HTML, y is the top of text box.
+      let ascent = fontSize * 0.8;
+      if (options.fontName) {
+        const font = new FontManager().getFont(options.fontName);
+        ascent = font.getAscent(fontSize);
+      }
+      pdfY = this.height - y - ascent;
     }
 
     this.contentStream.setFillColor(color);

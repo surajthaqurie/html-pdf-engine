@@ -25,6 +25,7 @@ import {
 } from "../fonts/font.js";
 import { ImageMap } from "../pdf/pdf-image.js";
 import { PdfError } from "../errors/pdf-error.js";
+import { discoverSystemFonts } from "../fonts/system-fonts.js";
 
 import { parsePageRules } from "../css/cascade.js";
 
@@ -109,6 +110,55 @@ export class HtmlToPdf {
 
     const fontManager = new FontManager();
 
+    // Auto-register high-quality system TTF fonts for the standard families
+    // (Helvetica/Arial/sans-serif → Liberation Sans, etc.) so that PDFs always
+    // embed real vector fonts instead of referencing bare Type1 names. User-
+    // supplied fonts (options.fonts) always take precedence.
+    const sysfonts = discoverSystemFonts();
+    const systemFontMap: CustomFontMap = {};
+    if (sysfonts.sansSerif?.regular) {
+      const v = sysfonts.sansSerif;
+      const entry: { regular: string; bold?: string; italic?: string; boldItalic?: string } = {
+        regular: v.regular!,
+      };
+      if (v.bold)      entry.bold      = v.bold;
+      if (v.italic)    entry.italic    = v.italic;
+      if (v.boldItalic) entry.boldItalic = v.boldItalic;
+      // Register under all common aliases so any of them triggers embedding
+      systemFontMap["Helvetica"]    = entry;
+      systemFontMap["Arial"]        = entry;
+      systemFontMap["sans-serif"]   = entry;
+    }
+    if (sysfonts.serif?.regular) {
+      const v = sysfonts.serif;
+      const entry: { regular: string; bold?: string; italic?: string; boldItalic?: string } = {
+        regular: v.regular!,
+      };
+      if (v.bold)      entry.bold      = v.bold;
+      if (v.italic)    entry.italic    = v.italic;
+      if (v.boldItalic) entry.boldItalic = v.boldItalic;
+      systemFontMap["Times-Roman"]     = entry;
+      systemFontMap["Times"]           = entry;
+      systemFontMap["Times New Roman"] = entry;
+      systemFontMap["serif"]           = entry;
+    }
+    if (sysfonts.mono?.regular) {
+      const v = sysfonts.mono;
+      const entry: { regular: string; bold?: string; italic?: string; boldItalic?: string } = {
+        regular: v.regular!,
+      };
+      if (v.bold)      entry.bold      = v.bold;
+      if (v.italic)    entry.italic    = v.italic;
+      if (v.boldItalic) entry.boldItalic = v.boldItalic;
+      systemFontMap["Courier"]     = entry;
+      systemFontMap["Courier New"] = entry;
+      systemFontMap["monospace"]   = entry;
+    }
+    // Register system fonts first (lowest priority — user fonts override)
+    if (Object.keys(systemFontMap).length > 0) {
+      fontManager.registerCustomFonts(systemFontMap);
+    }
+
     if (options.fonts) {
       fontManager.registerCustomFonts(options.fonts);
     }
@@ -166,13 +216,21 @@ export class HtmlToPdf {
         : Math.max(dimensions.width, dimensions.height);
 
     // 3. Perform Multi-Page Layout Computation
+    const layoutMargins = { ...margins };
+    if (options.header) {
+      layoutMargins.top += 20;
+    }
+    if (options.footer) {
+      layoutMargins.bottom += 20;
+    }
+
     const layoutEngine = new LayoutEngine(fontManager);
     const layoutBoxes = layoutEngine.layout(
       dom,
       cssRules,
       pageWidth,
       pageHeight,
-      margins,
+      layoutMargins,
       options.images,
       options.basePath,
       fontManager,
@@ -183,6 +241,7 @@ export class HtmlToPdf {
     const paintCommands = paintEngine.generatePaintCommands(layoutBoxes);
 
     const doc = new PDFDocument();
+    doc.setFontManager(fontManager);
     if (options.compress !== undefined) doc.setCompress(options.compress);
     if (options.header) doc.setHeader(options.header);
     if (options.footer) doc.setFooter(options.footer);

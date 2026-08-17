@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { HtmlToPdf } from "../../src/index.js";
 import { ImageError } from "../../src/errors/pdf-error.js";
+import { extractPdfText } from "../utils/pdf-text-extractor.js";
 
 const FIXTURES_DIR = path.resolve(
   process.cwd(),
@@ -335,7 +336,8 @@ describe("Phase 16 — Local Image Asset Resolution Integration Tests", () => {
     });
     const pdfStr = pdfBuffer.toString("latin1");
 
-    expect(pdfStr).toContain("Main Page Content");
+    const extracted = extractPdfText(pdfBuffer);
+    expect(extracted).toContain("Main Page Content");
   });
 
   test("23. Hyperlinked local image (<a href='...'><img src='...' /></a>)", async () => {

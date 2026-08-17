@@ -238,9 +238,10 @@ const pdf = await HtmlToPdf.generateBuffer({
 - Gradients (`<linearGradient>`, `<radialGradient>`), Filters, and Clipping paths.
 - Embedded raster images (`<image>`) inside SVG.
 
-### 2. Custom Font Embedding
+### 3. Font Support & Embedding
 
 The built-in font pipeline supports:
+- **System TrueType Fonts**: Automatically discovers and embeds high-quality system TTF fonts (Liberation, DejaVu, FreeFont) for standard font families if available, falling back to standard Type1 fonts.
 - **TrueType (`.ttf`)** — fully supported
 - **OpenType with TrueType outlines (`.otf` with `glyf` table)** — accepted by the parser (same binary table structure)
 - **WOFF / WOFF2** — **not supported**; the `@font-face` parser throws a `FontError` for these formats
@@ -536,6 +537,7 @@ try {
 | **HTML Tables** | **Supported** | `<table>`, `thead`, `tbody`, `tfoot`, `tr`, `th`, `td` with borders, padding, cell text-wrapping, automatic `<thead>` repeating headers across multi-page breaks, multi-row header repetition, and `break-inside: avoid` on `tr`. |
 | **Lists** | **Supported** | `<ul>`, `<ol>`, `<li>` with standard bullet and numbered layout spacing. |
 | **PNG, JPEG & SVG Images** | **Supported** | Base64 Data URLs, local file paths, and Node.js Buffer mapping (`options.images`). SVG vector rendering supported for common primitives (`path`, `rect`, `circle`, etc). |
+| **System TTF Fonts** | **Supported** | Automatically discovers and embeds high-quality system TrueType fonts (Liberation, DejaVu, FreeFont) if available. Falls back to standard Type1 fonts. |
 | **Custom TTF Fonts** | **Supported** | Custom `.ttf` embedding via `options.fonts` (`regular`, `bold`, `italic`, `boldItalic`). |
 | **TTF Subsetting** | **Supported** | Embeds subsetted CIDFontType2 / Type0 glyph maps with `/ToUnicode` CMaps. |
 | **Flexbox Layout** | **Supported** | 1D & multi-line layout (`flex-direction`, `flex-wrap`, `justify-content`, `align-items`, `gap`, `flex-grow/shrink/basis`). |

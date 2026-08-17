@@ -49,11 +49,11 @@ export class XRefTable {
       const genStr = entry.generationNumber.toString().padStart(5, "0");
       const flag = entry.inUse ? "n" : "f";
 
-      // Fixed 20-byte line: 10 + 1 + 5 + 1 + 1 + 2 (\r\n) = 20 bytes
-      lines.push(`${offsetStr} ${genStr} ${flag} \r`);
+      // Fixed 20-byte line: 10 + 1 + 5 + 1 + 1 + 1 (space) + 1 (\n) = 20 bytes
+      lines.push(`${offsetStr} ${genStr} ${flag} `);
     }
 
-    // Join with \n so each line ends in \r\n
+    // Join with \n so each entry ends with \n
     return new TextEncoder().encode(lines.join("\n") + "\n");
   }
 }

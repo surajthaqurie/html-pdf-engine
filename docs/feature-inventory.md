@@ -43,6 +43,7 @@ This internal inventory assesses all currently implemented user-facing features 
 - **Local/Buffer PNG, JPEG, SVG**: Implemented. Documented. Accurate. Tested. Limitations: WebP, AVIF, GIF not supported.
 - **Remote Image Loading**: Implemented (via `AssetResolver`). Documented. Accurate. Tested.
 - **Inline SVG Vector Rendering**: Implemented (`path`, `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, `transform`, `viewBox`). Limitations: `<text>`, gradients, clipping, filters are not supported. Documented. Accurate. Tested.
+- **System Fonts**: Automatically embeds available system TrueType fonts. Implemented. Documented. Accurate. Tested.
 - **Custom Fonts (TTF)**: Implemented. Documented. Accurate. Tested. Limitations: WOFF/WOFF2 not supported.
 - **TrueType Subsetting**: Implemented. Documented. Accurate. Tested.
 

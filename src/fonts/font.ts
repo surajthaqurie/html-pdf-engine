@@ -347,39 +347,40 @@ export class FontManager {
         FontManager.globalInstanceMap.get(famLower);
 
       if (existingFont) {
-        if (!existingFont.isCustom) {
-          return existingFont;
-        }
-        const originalFamily =
-          this.fontToFamilyMap.get(family) ??
-          this.fontToFamilyMap.get(famLower) ??
-          FontManager.globalFontToFamilyMap.get(family) ??
-          FontManager.globalFontToFamilyMap.get(famLower);
+        if (!existingFont.isCustom && (famLower === "helvetica" || famLower === "arial" || famLower === "sans-serif" || famLower === "times" || famLower === "times-roman" || famLower === "times new roman" || famLower === "serif" || famLower === "courier" || famLower === "monospace")) {
+          // Let it fall through to generic standard font handling below
+        } else {
+          const originalFamily =
+            this.fontToFamilyMap.get(family) ??
+            this.fontToFamilyMap.get(famLower) ??
+            FontManager.globalFontToFamilyMap.get(family) ??
+            FontManager.globalFontToFamilyMap.get(famLower);
 
-        if (!isBold && !isItalic) {
+          if (!isBold && !isItalic) {
+            return existingFont;
+          }
+          if (
+            isBold &&
+            (famLower.includes("bold") ||
+              existingFont.name.toLowerCase().includes("bold"))
+          ) {
+            return existingFont;
+          }
+          if (
+            isItalic &&
+            (famLower.includes("italic") ||
+              existingFont.name.toLowerCase().includes("italic"))
+          ) {
+            return existingFont;
+          }
+          if (
+            originalFamily &&
+            originalFamily.toLowerCase() !== famLower
+          ) {
+            return this.doResolveFont(originalFamily, weight, style);
+          }
           return existingFont;
         }
-        if (
-          isBold &&
-          (famLower.includes("bold") ||
-            existingFont.name.toLowerCase().includes("bold"))
-        ) {
-          return existingFont;
-        }
-        if (
-          isItalic &&
-          (famLower.includes("italic") ||
-            existingFont.name.toLowerCase().includes("italic"))
-        ) {
-          return existingFont;
-        }
-        if (
-          originalFamily &&
-          originalFamily.toLowerCase() !== famLower
-        ) {
-          return this.doResolveFont(originalFamily, weight, style);
-        }
-        return existingFont;
       }
 
       // 1. Check customFontMap (options.fonts API takes precedence)

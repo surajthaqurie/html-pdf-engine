@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { HtmlToPdf } from "../../src/core/html-to-pdf.js";
 import * as fs from "fs";
 import * as path from "path";
+import { extractPdfText } from "../utils/pdf-text-extractor.js";
 
 describe("Phase 9 — Document Rendering Fixtures Suite", () => {
   const artifactsDir = path.join(process.cwd(), "artifacts", "fixtures");
@@ -31,8 +32,9 @@ describe("Phase 9 — Document Rendering Fixtures Suite", () => {
     const buffer = await HtmlToPdf.generateBuffer({ html, compress: false });
     fs.writeFileSync(path.join(artifactsDir, "01_basic_document.pdf"), buffer);
 
+    const extracted = extractPdfText(buffer);
     expect(buffer.length).toBeGreaterThan(100);
-    expect(buffer.toString("binary")).toContain("(Basic Document Fixture) Tj");
+    expect(extracted).toContain("Basic Document Fixture");
   });
 
   // 2. Invoice
@@ -73,8 +75,9 @@ describe("Phase 9 — Document Rendering Fixtures Suite", () => {
     const buffer = await HtmlToPdf.generateBuffer({ html, compress: false });
     fs.writeFileSync(path.join(artifactsDir, "02_invoice.pdf"), buffer);
 
-    expect(buffer.toString("binary")).toContain("(INVOICE #INV-2026-001) Tj");
-    expect(buffer.toString("binary")).toContain("(Total Due: $2,250.00) Tj");
+    const extracted = extractPdfText(buffer);
+    expect(extracted).toContain("INVOICE #INV-2026-001");
+    expect(extracted).toContain("Total Due: $2,250.00");
   });
 
   // 3. Receipt
@@ -99,7 +102,8 @@ describe("Phase 9 — Document Rendering Fixtures Suite", () => {
     const buffer = doc.save();
     fs.writeFileSync(path.join(artifactsDir, "03_receipt.pdf"), buffer);
 
-    expect(buffer.toString("binary")).toContain("(COFFEE SHOP RECEIPT) Tj");
+    const extracted = extractPdfText(buffer);
+    expect(extracted).toContain("COFFEE SHOP RECEIPT");
   });
 
   // 4. Quotation
@@ -118,7 +122,8 @@ describe("Phase 9 — Document Rendering Fixtures Suite", () => {
     const buffer = await HtmlToPdf.generateBuffer({ html, compress: false });
     fs.writeFileSync(path.join(artifactsDir, "04_quotation.pdf"), buffer);
 
-    expect(buffer.toString("binary")).toContain("(Commercial Price Quotation) Tj");
+    const extracted = extractPdfText(buffer);
+    expect(extracted).toContain("Commercial Price Quotation");
   });
 
   // 5. Report
@@ -138,7 +143,8 @@ describe("Phase 9 — Document Rendering Fixtures Suite", () => {
     const buffer = await HtmlToPdf.generateBuffer({ html, compress: false });
     fs.writeFileSync(path.join(artifactsDir, "05_report.pdf"), buffer);
 
-    expect(buffer.toString("binary")).toContain("(Executive Summary Report) Tj");
+    const extracted = extractPdfText(buffer);
+    expect(extracted).toContain("Executive Summary Report");
   });
 
   // 6. Table
@@ -165,7 +171,8 @@ describe("Phase 9 — Document Rendering Fixtures Suite", () => {
     const buffer = await HtmlToPdf.generateBuffer({ html, compress: false });
     fs.writeFileSync(path.join(artifactsDir, "06_table.pdf"), buffer);
 
-    expect(buffer.toString("binary")).toContain("(System Performance Matrix) Tj");
+    const extracted = extractPdfText(buffer);
+    expect(extracted).toContain("System Performance Matrix");
   });
 
   // 7. Long Text
@@ -223,7 +230,8 @@ describe("Phase 9 — Document Rendering Fixtures Suite", () => {
     });
     fs.writeFileSync(path.join(artifactsDir, "10_headers.pdf"), buffer);
 
-    expect(buffer.toString("binary")).toContain("(Official Header Title) Tj");
+    const extracted = extractPdfText(buffer);
+    expect(extracted).toContain("Official Header Title");
   });
 
   // 11. Footers
@@ -236,7 +244,8 @@ describe("Phase 9 — Document Rendering Fixtures Suite", () => {
     });
     fs.writeFileSync(path.join(artifactsDir, "11_footers.pdf"), buffer);
 
-    expect(buffer.toString("binary")).toContain("(Page 1 of 1) Tj");
+    const extracted = extractPdfText(buffer);
+    expect(extracted).toContain("Page 1 of 1");
   });
 
   // 12. Multi-Page Enterprise Invoice Fixture (Phase 4 + 5)

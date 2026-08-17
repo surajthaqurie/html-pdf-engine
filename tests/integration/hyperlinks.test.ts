@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { HtmlToPdf } from "../../src/index.js";
+import { extractPdfText } from "../utils/pdf-text-extractor.js";
 
 describe("Phase 7 — PDF Hyperlinks Suite", () => {
   it("renders a clickable link annotation for absolute http/https URLs", async () => {
@@ -12,7 +13,8 @@ describe("Phase 7 — PDF Hyperlinks Suite", () => {
     expect(pdfStr).toContain("/S /URI");
     expect(pdfStr).toContain("/URI (https://example.com)");
     expect(pdfStr).toContain("/Annots");
-    expect(pdfStr).toContain("Visit Example");
+    const extracted = extractPdfText(buffer);
+    expect(extracted).toContain("Visit Example");
   });
 
   it("renders a clickable link annotation for mailto: URLs", async () => {
@@ -22,7 +24,8 @@ describe("Phase 7 — PDF Hyperlinks Suite", () => {
 
     expect(pdfStr).toContain("/Subtype /Link");
     expect(pdfStr).toContain("/URI (mailto:support@example.com)");
-    expect(pdfStr).toContain("Contact Support");
+    const extracted = extractPdfText(buffer);
+    expect(extracted).toContain("Contact Support");
   });
 
   it("supports multiple links on the same page with distinct annotations", async () => {
@@ -76,9 +79,10 @@ describe("Phase 7 — PDF Hyperlinks Suite", () => {
 
     expect(pdfStr).not.toContain("/Subtype /Link");
     expect(pdfStr).not.toContain("/Annots");
-    expect(pdfStr).toContain("JS Script Link");
-    expect(pdfStr).toContain("Fragment Link");
-    expect(pdfStr).toContain("Relative Link");
+    const extracted = extractPdfText(buffer);
+    expect(extracted).toContain("JS Script Link");
+    expect(extracted).toContain("Fragment Link");
+    expect(extracted).toContain("Relative Link");
   });
 
   it("preserves PDF structure cleanly without /Annots when no links are present", async () => {
