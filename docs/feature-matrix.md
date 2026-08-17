@@ -1,6 +1,6 @@
 # Feature Support Matrix: html-pdf-engine
 
-This document details the feature support matrix for `html-pdf-engine` (v1.0.1). Feature support is determined based on actual implementation and automated test coverage in the codebase.
+This document details the feature support matrix for `html-pdf-engine` (v1.1.1). Feature support is determined based on actual implementation and automated test coverage in the codebase.
 
 Status Levels:
 - **SUPPORTED**: Fully implemented, verified in automated test suite.

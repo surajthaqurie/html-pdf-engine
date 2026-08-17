@@ -1,7 +1,7 @@
 # Architecture and Package Audit: html-pdf-engine
 
 ## Executive Summary
-This document presents the comprehensive audit of `html-pdf-engine` (v1.0.1), a zero-dependency, pure TypeScript HTML/CSS to PDF rendering engine.
+This document presents the comprehensive audit of `html-pdf-engine` (v1.1.1), a zero-dependency, pure TypeScript HTML/CSS to PDF rendering engine.
 
 ---
 
@@ -9,7 +9,7 @@ This document presents the comprehensive audit of `html-pdf-engine` (v1.0.1), a 
 
 ### Observations & Settings
 - **Name**: `html-pdf-engine`
-- **Version**: `1.0.1`
+- **Version**: `1.1.1`
 - **Type**: `module` (ESM native)
 - **Main & Exports**: Points to `./dist/index.js` with typings `./dist/index.d.ts`.
 - **TypeScript Config (`tsconfig.json`)**:

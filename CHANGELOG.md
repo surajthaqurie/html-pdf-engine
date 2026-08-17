@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1
+
+### Patch Changes
+
+- Fix rendering pipeline performance regression and improve release stability
+
 ## 1.1.0
 
 ### Minor Changes
