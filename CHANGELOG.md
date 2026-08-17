@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+### Minor Changes
+
+- Improve rendering layout, text extraction, and invoice rendering reliability
+
 ## 1.0.1
 
 ### Patch Changes

@@ -1,9 +1,12 @@
 import * as zlib from "node:zlib";
 
-function findStreamStartIndex(str: string, pos: number): { idx: number; prefixLen: number } {
+function findStreamStartIndex(
+  str: string,
+  pos: number,
+): { idx: number; prefixLen: number } {
   const s1 = str.indexOf("stream\n", pos);
   const s2 = str.indexOf("stream\r\n", pos);
-  
+
   if (s1 !== -1 && s2 !== -1) {
     return s1 < s2 ? { idx: s1, prefixLen: 7 } : { idx: s2, prefixLen: 8 };
   }
@@ -12,7 +15,13 @@ function findStreamStartIndex(str: string, pos: number): { idx: number; prefixLe
   return { idx: -1, prefixLen: 0 };
 }
 
-function processStreamData(str: string, streamIdx: number, endIdx: number, prefixLen: number, dictStr: string): string {
+function processStreamData(
+  str: string,
+  streamIdx: number,
+  endIdx: number,
+  prefixLen: number,
+  dictStr: string,
+): string {
   let streamData = str.substring(streamIdx + prefixLen, endIdx);
   if (streamData.endsWith("\r\n")) {
     streamData = streamData.substring(0, streamData.length - 2);
@@ -20,7 +29,10 @@ function processStreamData(str: string, streamIdx: number, endIdx: number, prefi
     streamData = streamData.substring(0, streamData.length - 1);
   }
 
-  if (dictStr.includes("/Filter /FlateDecode") || dictStr.includes("/Filter/FlateDecode")) {
+  if (
+    dictStr.includes("/Filter /FlateDecode") ||
+    dictStr.includes("/Filter/FlateDecode")
+  ) {
     try {
       const buf = Buffer.from(streamData, "binary");
       streamData = zlib.unzipSync(buf).toString("binary");
@@ -45,7 +57,13 @@ function extractDecodedStreams(str: string): string[] {
     const dictStart = str.lastIndexOf("<<", streamIdx);
     if (dictStart !== -1 && dictStart >= pos) {
       const dictStr = str.substring(dictStart, streamIdx);
-      const streamData = processStreamData(str, streamIdx, endIdx, prefixLen, dictStr);
+      const streamData = processStreamData(
+        str,
+        streamIdx,
+        endIdx,
+        prefixLen,
+        dictStr,
+      );
       decodedStreams.push(streamData);
     }
     pos = endIdx + 9;
@@ -63,7 +81,7 @@ function extractCMaps(streams: string[]): Map<string, string>[] {
     while ((bfMatch = bfcharRegex.exec(streamData)) !== null) {
       const cmap = new Map<string, string>();
       const lines = bfMatch[1]!.trim().split("\n");
-      
+
       for (const line of lines) {
         const match = lineRegex.exec(line);
         if (match) {
@@ -112,21 +130,19 @@ function decodeCMapHex(hex: string, cmaps: Map<string, string>[]): string {
 }
 
 function decodeHex(hex: string, cmaps: Map<string, string>[]): string {
-  const ascii = decodeAsciiHex(hex);
   const cmapStr = decodeCMapHex(hex, cmaps);
-  
-  if (ascii && cmapStr) {
-    return `${ascii} ${cmapStr}`;
+  if (cmapStr) {
+    return cmapStr;
   }
-  return ascii || cmapStr;
+  return decodeAsciiHex(hex);
 }
 
 function findLiteralStringEnd(textBlock: string, startIdx: number): number {
   let end = startIdx;
   while (end < textBlock.length) {
-    if (textBlock[end] === '\\') {
+    if (textBlock[end] === "\\") {
       end += 2;
-    } else if (textBlock[end] === ')') {
+    } else if (textBlock[end] === ")") {
       break;
     } else {
       end++;
@@ -139,7 +155,7 @@ function extractLiteralStrings(textBlock: string): string[] {
   const literals: string[] = [];
   let i = 0;
   while (i < textBlock.length) {
-    if (textBlock[i] === '(') {
+    if (textBlock[i] === "(") {
       const end = findLiteralStringEnd(textBlock, i + 1);
       if (end < textBlock.length) {
         literals.push(textBlock.substring(i + 1, end));
@@ -152,30 +168,33 @@ function extractLiteralStrings(textBlock: string): string[] {
   return literals;
 }
 
-function extractTextFromStreams(streams: string[], cmaps: Map<string, string>[]): string {
+function extractTextFromStreams(
+  streams: string[],
+  cmaps: Map<string, string>[],
+): string {
   let text = "";
-  
+
   for (const streamData of streams) {
     let pos = 0;
     while (true) {
       const btIdx = streamData.indexOf("BT", pos);
       if (btIdx === -1) break;
-      
+
       const etIdx = streamData.indexOf("ET", btIdx);
       if (etIdx === -1) break;
-      
+
       const textBlock = streamData.substring(btIdx + 2, etIdx);
-      
+
       const literals = extractLiteralStrings(textBlock);
       for (const literal of literals) {
         text += literal.replace(/\\(.)/g, "$1") + " ";
       }
-      
+
       const hexMatches = [...textBlock.matchAll(/<([0-9A-Fa-f]+)>/g)];
       for (const m of hexMatches) {
         text += decodeHex(m[1]!.toUpperCase(), cmaps) + " ";
       }
-      
+
       pos = etIdx + 2;
     }
   }

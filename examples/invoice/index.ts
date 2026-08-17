@@ -103,7 +103,7 @@ async function main() {
       <html>
         <head>
           <style>
-            body { font-family: InterCustom, sans-serif; margin: 0; padding: 20px; }
+            body { font-family: Helvetica, sans-serif; margin: 0; padding: 20px; }
             .logo { width: 120px; height: 40px; }
             .invoice-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0284c7; padding-bottom: 15px; margin-bottom: 20px; }
             .title { color: #0369a1; font-size: 22pt; margin: 0; font-weight: bold; text-align: right; }
@@ -119,7 +119,7 @@ async function main() {
             <div>
               <img class="logo" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" alt="Logo" />
             </div>
-            <div>
+            <div style="width: 350px; text-align: right;">
               <h1 class="title">INVOICE #INV-2026-001</h1>
               <p class="meta">Date: August 15, 2026 | Due Date: September 15, 2026</p>
             </div>
@@ -155,12 +155,6 @@ async function main() {
       </html>
     `,
     page: "A4",
-    fonts: {
-      InterCustom: {
-        regular: customRegularFont,
-        bold: customBoldFont,
-      },
-    },
     header: { text: "Acme Corporation Inc.", align: "left" },
     footer: { text: "Page {{pageNumber}} of {{totalPages}}", align: "center", showDividerLine: true },
   });

@@ -569,7 +569,7 @@ export class LayoutEngine {
           pageIndex: pageIdx,
         });
 
-        contentHeight += lineHeight;
+        innerY += lineHeight;
       } else if (isNowrap) {
         const indent = box.style.textIndent || 0;
         const measuredW = font.measureTextWidth(
@@ -588,7 +588,7 @@ export class LayoutEngine {
           pageIndex: pageIdx,
         });
 
-        contentHeight += lineHeight;
+        innerY += lineHeight;
       } else {
         const words = transformedText.split(" ");
         let currentLineText = "";
@@ -628,7 +628,6 @@ export class LayoutEngine {
             });
 
             innerY += lineHeight;
-            contentHeight += lineHeight;
             currentLineText = word;
             currentLineWidth = font.measureTextWidth(
               word,
@@ -662,7 +661,7 @@ export class LayoutEngine {
             pageIndex: pageIdx,
           });
 
-          contentHeight += lineHeight;
+          innerY += lineHeight;
         }
       }
     } else {
@@ -734,11 +733,12 @@ export class LayoutEngine {
         innerY = res.nextY;
         pageIdx = res.nextPageIndex;
       }
-      contentHeight =
-        (pageIdx - box.pageIndex) * ctx.printableHeight +
-        innerY -
-        (currentY + borderTop + paddingTop);
     }
+
+    contentHeight =
+      (pageIdx - box.pageIndex) * ctx.printableHeight +
+      innerY -
+      (currentY + borderTop + paddingTop);
 
     if (dim) {
       box.width = dim.contentWidth;
