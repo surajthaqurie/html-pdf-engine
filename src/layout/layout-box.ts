@@ -63,14 +63,16 @@ export class LayoutBox {
   get totalWidth(): number {
     if (!this.dimensions) return this.width;
     const d = this.dimensions;
+    const mL = d.margin.left === "auto" ? 0 : d.margin.left;
+    const mR = d.margin.right === "auto" ? 0 : d.margin.right;
     return (
       this.width +
       d.padding.left +
       d.padding.right +
       d.border.left +
       d.border.right +
-      d.margin.left +
-      d.margin.right
+      mL +
+      mR
     );
   }
 

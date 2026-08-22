@@ -220,32 +220,46 @@ export class CascadeEngine {
     return targetIdx < 0;
   }
 
-  private matchTagAndClass(element: ElementNode, sel: string, dotIdx: number): boolean {
-    const tag = dotIdx > 0 ? sel.slice(0, dotIdx).toLowerCase() : "";
-    const cls = sel.slice(dotIdx + 1).split(/[.#:]/)[0];
-    if (tag && tag !== element.tagName) return false;
-    return cls ? element.classList.includes(cls) : false;
-  }
-
-  private matchTagAndId(element: ElementNode, sel: string, hashIdx: number): boolean {
-    const tag = sel.slice(0, hashIdx).toLowerCase();
-    const id = sel.slice(hashIdx + 1).split(/[.#:]/)[0];
-    if (tag && tag !== element.tagName) return false;
-    return id ? element.id === id : false;
-  }
 
   private matchesCompoundSelector(element: ElementNode, sel: string): boolean {
-    if (sel.startsWith(".")) return element.classList.includes(sel.slice(1));
-    if (sel.startsWith("#")) return element.id === sel.slice(1);
-    const dotIdx = sel.indexOf(".");
-    const hashIdx = sel.indexOf("#");
-    if (dotIdx !== -1 && (hashIdx === -1 || dotIdx < hashIdx)) {
-      return this.matchTagAndClass(element, sel, dotIdx);
+    let currentToken = "";
+    let currentType: "tag" | "class" | "id" = "tag";
+    const tags: string[] = [];
+    const classes: string[] = [];
+    const ids: string[] = [];
+    const flush = () => {
+      if (currentToken) {
+        if (currentType === "tag") tags.push(currentToken.toLowerCase());
+        else if (currentType === "class") classes.push(currentToken);
+        else if (currentType === "id") ids.push(currentToken);
+        currentToken = "";
+      }
+    };
+    for (let i = 0; i < sel.length; i++) {
+      const char = sel[i];
+      if (char === ".") {
+        flush();
+        currentType = "class";
+      } else if (char === "#") {
+        flush();
+        currentType = "id";
+      } else {
+        currentToken += char;
+      }
     }
-    if (hashIdx > 0) {
-      return this.matchTagAndId(element, sel, hashIdx);
+    flush();
+    if (tags.length > 0 && tags[0] !== element.tagName.toLowerCase()) {
+      return false;
     }
-    return false;
+    if (ids.length > 0 && ids[0] !== element.id) {
+      return false;
+    }
+    for (const cls of classes) {
+      if (!element.classList.includes(cls)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private matchesSelector(element: ElementNode, selector: string): boolean {
@@ -434,9 +448,9 @@ export class CascadeEngine {
   private applySpacingAndDisplay(computed: ComputedStyle, prop: string, val: string, containerWidth: number): boolean {
     switch (prop) {
       case "margin-top": computed.marginTop = parseCssUnit(val, containerWidth); return true;
-      case "margin-right": computed.marginRight = parseCssUnit(val, containerWidth); return true;
+      case "margin-right": computed.marginRight = val.trim().toLowerCase() === "auto" ? "auto" : parseCssUnit(val, containerWidth); return true;
       case "margin-bottom": computed.marginBottom = parseCssUnit(val, containerWidth); return true;
-      case "margin-left": computed.marginLeft = parseCssUnit(val, containerWidth); return true;
+      case "margin-left": computed.marginLeft = val.trim().toLowerCase() === "auto" ? "auto" : parseCssUnit(val, containerWidth); return true;
       case "padding-top": computed.paddingTop = parseCssUnit(val, containerWidth); return true;
       case "padding-right": computed.paddingRight = parseCssUnit(val, containerWidth); return true;
       case "padding-bottom": computed.paddingBottom = parseCssUnit(val, containerWidth); return true;
@@ -540,14 +554,14 @@ export class CascadeEngine {
       case "border-bottom-style": computed.borderBottomStyle = val.toLowerCase().trim(); return true;
       case "border-left-style": computed.borderLeftStyle = val.toLowerCase().trim(); return true;
       case "border-radius": {
-        const [tl, tr, br, bl] = parse4Values(val, (v) => parseCssUnit(v));
+        const [tl, tr, br, bl] = parse4Values(val, (v) => parseBorderRadius(v));
         computed.borderTopLeftRadius = tl; computed.borderTopRightRadius = tr; computed.borderBottomRightRadius = br; computed.borderBottomLeftRadius = bl;
         return true;
       }
-      case "border-top-left-radius": computed.borderTopLeftRadius = parseCssUnit(val); return true;
-      case "border-top-right-radius": computed.borderTopRightRadius = parseCssUnit(val); return true;
-      case "border-bottom-right-radius": computed.borderBottomRightRadius = parseCssUnit(val); return true;
-      case "border-bottom-left-radius": computed.borderBottomLeftRadius = parseCssUnit(val); return true;
+      case "border-top-left-radius": computed.borderTopLeftRadius = parseBorderRadius(val); return true;
+      case "border-top-right-radius": computed.borderTopRightRadius = parseBorderRadius(val); return true;
+      case "border-bottom-right-radius": computed.borderBottomRightRadius = parseBorderRadius(val); return true;
+      case "border-bottom-left-radius": computed.borderBottomLeftRadius = parseBorderRadius(val); return true;
       default: return false;
     }
   }
@@ -1009,4 +1023,19 @@ function parse4Values<T>(val: string, parser: (v: string) => T): [T, T, T, T] {
   }
   const fallback = parser(val);
   return [fallback, fallback, fallback, fallback];
+}
+
+/**
+ * Parse a border-radius value.
+ * Percentage values (e.g., "50%") are stored as negative fractions
+ * (e.g., -0.5) as a sentinel, to be resolved against the actual box
+ * dimensions in the paint engine: radius = |sentinel| * min(width, height) / 2
+ */
+function parseBorderRadius(val: string): number {
+  const trimmed = val.trim().toLowerCase();
+  if (trimmed.endsWith("%")) {
+    const pct = parseFloat(trimmed.slice(0, -1));
+    if (!isNaN(pct)) return -(pct / 100);
+  }
+  return parseCssUnit(val);
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2
+
+### Patch Changes
+
+- Stabilize layout and paint engine positioning and border rendering.
+
 ## 1.1.1
 
 ### Patch Changes

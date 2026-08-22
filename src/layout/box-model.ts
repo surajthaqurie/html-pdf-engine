@@ -7,19 +7,26 @@ export interface BoxSpacing {
   left: number;
 }
 
+export interface MarginSpacing {
+  top: number;
+  right: number | "auto";
+  bottom: number;
+  left: number | "auto";
+}
+
 export interface BoxDimensions {
   contentWidth: number;
   contentHeight: number;
   padding: BoxSpacing;
   border: BoxSpacing;
-  margin: BoxSpacing;
+  margin: MarginSpacing;
 }
 
 export function createBoxDimensions(
   style: ComputedStyle,
   parentContentWidth: number,
 ): BoxDimensions {
-  const margin: BoxSpacing = {
+  const margin: MarginSpacing = {
     top: style.marginTop,
     right: style.marginRight,
     bottom: style.marginBottom,
@@ -42,16 +49,23 @@ export function createBoxDimensions(
 
   let contentWidth = 0;
   if (style.width === "auto") {
-    contentWidth = Math.max(
-      0,
-      parentContentWidth -
-        margin.left -
-        margin.right -
-        padding.left -
-        padding.right -
-        border.left -
-        border.right,
-    );
+    if (style.display === "inline-block") {
+      // inline-block shrink-wraps: start at 0; content layout will determine actual width
+      contentWidth = 0;
+    } else {
+      const leftMargin = margin.left === "auto" ? 0 : margin.left;
+      const rightMargin = margin.right === "auto" ? 0 : margin.right;
+      contentWidth = Math.max(
+        0,
+        parentContentWidth -
+          leftMargin -
+          rightMargin -
+          padding.left -
+          padding.right -
+          border.left -
+          border.right,
+      );
+    }
   } else {
     contentWidth = style.width;
   }

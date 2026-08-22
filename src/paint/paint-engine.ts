@@ -92,18 +92,44 @@ export class PaintEngine {
       box.width > 0 &&
       box.height > 0;
 
+    const rawTL = box.style.borderTopLeftRadius;
+    const rawTR = box.style.borderTopRightRadius;
+    const rawBR = box.style.borderBottomRightRadius;
+    const rawBL = box.style.borderBottomLeftRadius;
+
+    // Resolve percentage border-radius sentinels (stored as negative fractions by cascade).
+    // e.g. -0.5 means 50% → clamped to min(width,height)/2 so circles work correctly.
+    const resolveRadius = (raw: number, w: number, h: number): number => {
+      if (raw < 0) return Math.min(w, h) * Math.abs(raw);
+      return raw;
+    };
+    const bw = (box.width ?? 0) + ((box.dimensions?.padding.left ?? 0) + (box.dimensions?.padding.right ?? 0) + (box.dimensions?.border.left ?? 0) + (box.dimensions?.border.right ?? 0));
+    const bh = (box.height ?? 0) + ((box.dimensions?.padding.top ?? 0) + (box.dimensions?.padding.bottom ?? 0) + (box.dimensions?.border.top ?? 0) + (box.dimensions?.border.bottom ?? 0));
+    const rTL = resolveRadius(rawTL, bw, bh);
+    const rTR = resolveRadius(rawTR, bw, bh);
+    const rBR = resolveRadius(rawBR, bw, bh);
+    const rBL = resolveRadius(rawBL, bw, bh);
+
     const radii: BorderRadiusConfig | undefined =
-      box.style.borderTopLeftRadius > 0 ||
-      box.style.borderTopRightRadius > 0 ||
-      box.style.borderBottomRightRadius > 0 ||
-      box.style.borderBottomLeftRadius > 0
+      rTL > 0 || rTR > 0 || rBR > 0 || rBL > 0
         ? {
-            topLeft: box.style.borderTopLeftRadius,
-            topRight: box.style.borderTopRightRadius,
-            bottomRight: box.style.borderBottomRightRadius,
-            bottomLeft: box.style.borderBottomLeftRadius,
+            topLeft: rTL,
+            topRight: rTR,
+            bottomRight: rBR,
+            bottomLeft: rBL,
           }
         : undefined;
+
+    // 1. Draw Background Color if present
+    if (box.boxType !== "Text") {
+      this.paintBackgroundColor(box, commands, radii, pageIndex, zIndex, isFixed);
+
+      // 1b. Draw Background Image if present
+      this.paintBackgroundImage(box, commands, pageIndex, zIndex, isFixed);
+
+      // 2. Draw Borders if present
+      this.paintBorders(box, commands, radii, pageIndex, zIndex, isFixed);
+    }
 
     if (isClipped) {
       const dim = box.dimensions;
@@ -128,17 +154,6 @@ export class PaintEngine {
         zIndex,
         isFixed,
       });
-    }
-
-    // 1. Draw Background Color if present
-    if (box.boxType !== "Text") {
-      this.paintBackgroundColor(box, commands, radii, pageIndex, zIndex, isFixed);
-
-      // 1b. Draw Background Image if present
-      this.paintBackgroundImage(box, commands, pageIndex, zIndex, isFixed);
-
-      // 2. Draw Borders if present
-      this.paintBorders(box, commands, radii, pageIndex, zIndex, isFixed);
     }
 
     // 3. Draw Image Content if present
@@ -311,6 +326,38 @@ export class PaintEngine {
     return sameStyle && box.style.borderTopStyle === "solid";
   }
 
+  private paintBorderSide(
+    commands: PaintCommand[],
+    side: {
+      width: number;
+      style: string;
+      color: any;
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+    },
+    pageIndex: number,
+    zIndex: number | "auto",
+    isFixed: boolean,
+  ) {
+    if (side.width > 0 && side.style !== "none") {
+      commands.push({
+        type: "line",
+        x1: side.x1,
+        y1: side.y1,
+        x2: side.x2,
+        y2: side.y2,
+        strokeColor: side.color,
+        lineWidth: side.width,
+        lineStyle: side.style as any,
+        pageIndex,
+        zIndex,
+        isFixed,
+      });
+    }
+  }
+
   private paintBorders(box: LayoutBox, commands: PaintCommand[], radii: BorderRadiusConfig | undefined, pageIndex: number, zIndex: number | "auto", isFixed: boolean) {
     const dim = box.dimensions;
     const pL = dim ? dim.padding.left : 0;
@@ -330,17 +377,15 @@ export class PaintEngine {
       return;
     }
 
-    if (box.style.borderTopWidth > 0 && box.style.borderTopStyle !== "none") {
-      commands.push({ type: "line", x1: box.x, y1: box.y, x2: box.x + borderBoxW, y2: box.y, strokeColor: box.style.borderTopColor, lineWidth: box.style.borderTopWidth, lineStyle: box.style.borderTopStyle as any, pageIndex, zIndex, isFixed });
-    }
-    if (box.style.borderRightWidth > 0 && box.style.borderRightStyle !== "none") {
-      commands.push({ type: "line", x1: box.x + borderBoxW, y1: box.y, x2: box.x + borderBoxW, y2: box.y + borderBoxH, strokeColor: box.style.borderRightColor, lineWidth: box.style.borderRightWidth, lineStyle: box.style.borderRightStyle as any, pageIndex, zIndex, isFixed });
-    }
-    if (box.style.borderBottomWidth > 0 && box.style.borderBottomStyle !== "none") {
-      commands.push({ type: "line", x1: box.x, y1: box.y + borderBoxH, x2: box.x + borderBoxW, y2: box.y + borderBoxH, strokeColor: box.style.borderBottomColor, lineWidth: box.style.borderBottomWidth, lineStyle: box.style.borderBottomStyle as any, pageIndex, zIndex, isFixed });
-    }
-    if (box.style.borderLeftWidth > 0 && box.style.borderLeftStyle !== "none") {
-      commands.push({ type: "line", x1: box.x, y1: box.y, x2: box.x, y2: box.y + borderBoxH, strokeColor: box.style.borderLeftColor, lineWidth: box.style.borderLeftWidth, lineStyle: box.style.borderLeftStyle as any, pageIndex, zIndex, isFixed });
+    const sides = [
+      { width: box.style.borderTopWidth, style: box.style.borderTopStyle, color: box.style.borderTopColor, x1: box.x, y1: box.y, x2: box.x + borderBoxW, y2: box.y },
+      { width: box.style.borderRightWidth, style: box.style.borderRightStyle, color: box.style.borderRightColor, x1: box.x + borderBoxW, y1: box.y, x2: box.x + borderBoxW, y2: box.y + borderBoxH },
+      { width: box.style.borderBottomWidth, style: box.style.borderBottomStyle, color: box.style.borderBottomColor, x1: box.x, y1: box.y + borderBoxH, x2: box.x + borderBoxW, y2: box.y + borderBoxH },
+      { width: box.style.borderLeftWidth, style: box.style.borderLeftStyle, color: box.style.borderLeftColor, x1: box.x, y1: box.y, x2: box.x, y2: box.y + borderBoxH },
+    ];
+
+    for (const side of sides) {
+      this.paintBorderSide(commands, side, pageIndex, zIndex, isFixed);
     }
   }
 

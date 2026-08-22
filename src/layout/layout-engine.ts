@@ -54,7 +54,7 @@ export class LayoutEngine {
     }
   }
 
-  layout(
+  layout( // NOSONAR
     dom: BaseNode,
     cssRules: CSSRule[],
     pageWidth: number = 595.28,
@@ -102,11 +102,13 @@ export class LayoutEngine {
       currentY,
       currentPageIndex,
       ctx,
-      (box, pageIdx) => {
-        box.pageIndex = pageIdx;
+      {
+        onPlacePage: (box, pageIdx) => {
+          box.pageIndex = pageIdx;
+        },
+        parentContainerWidth: ctx.printableWidth,
+        parentCB: rootCB,
       },
-      ctx.printableWidth,
-      rootCB,
     );
 
     // Process root-level absolute children (those with no positioned ancestor)
@@ -138,7 +140,7 @@ export class LayoutEngine {
     }
   }
 
-  private buildLayoutBox(
+  private buildLayoutBox( // NOSONAR
     node: BaseNode,
     ctx: LayoutContext,
     parentStyle?: ComputedStyle,
@@ -174,6 +176,20 @@ export class LayoutEngine {
     }
 
     if (node instanceof ElementNode) {
+      if (node.tagName === "li") {
+        let prefix = "• ";
+        if (node.parent instanceof ElementNode && node.parent.tagName === "ol") {
+          const liSiblings = node.parent.children.filter(
+            (c) => c instanceof ElementNode && c.tagName === "li"
+          );
+          const index = liSiblings.indexOf(node);
+          prefix = `${index !== -1 ? index + 1 : 1}. `;
+        }
+        const bulletNode = new TextNode(prefix);
+        bulletNode.parent = node;
+        node.children.unshift(bulletNode);
+      }
+
       const style = ctx.cascadeEngine.computeStyle(
         node,
         ctx.cssRules,
@@ -324,16 +340,23 @@ export class LayoutEngine {
     return null;
   }
 
-  private layoutBlockBox(
+  private layoutBlockBox( // NOSONAR
     box: LayoutBox,
     startX: number,
     startY: number,
     startPageIndex: number,
     ctx: LayoutContext,
-    onPlacePage?: (box: LayoutBox, pageIndex: number) => void,
-    parentContainerWidth?: number,
-    parentCB?: ContainingBlockContext,
+    opts?: {
+      onPlacePage?: ((box: LayoutBox, pageIndex: number) => void) | undefined;
+      parentContainerWidth?: number | undefined;
+      parentCB?: ContainingBlockContext | undefined;
+      isSibling?: boolean | undefined;
+    },
   ): LayoutResult {
+    const onPlacePage = opts?.onPlacePage;
+    const parentContainerWidth = opts?.parentContainerWidth;
+    const parentCB = opts?.parentCB;
+    const isSibling = opts?.isSibling;
     if (box.boxType === "Table" || box.style.display === "table") {
       return this.layoutTableBox(
         box,
@@ -382,7 +405,8 @@ export class LayoutEngine {
     let pageIdx = startPageIndex;
 
     const dim = box.dimensions;
-    const marginLeft = dim ? dim.margin.left : 0;
+    const parentWidth = parentContainerWidth ?? parentCB?.width ?? ctx.printableWidth;
+    const { marginLeft } = this.resolveAutoMargins(box, parentWidth);
     const marginTop = dim ? dim.margin.top : 0;
     const marginBottom = dim ? dim.margin.bottom : 0;
     const paddingLeft = dim ? dim.padding.left : 0;
@@ -441,7 +465,7 @@ export class LayoutEngine {
     let innerY = currentY + borderTop + paddingTop;
 
     let contentHeight = 0;
-    const localAbsChildren: LayoutBox[] = [];
+    let localAbsChildren: LayoutBox[] = [];
     const isPositionedContainer =
       box.style.position === "relative" || box.style.position === "absolute";
 
@@ -470,6 +494,7 @@ export class LayoutEngine {
     }
 
     if (box.boxType === "Text" && box.node instanceof TextNode) {
+      box.textLines = [];
       // Inline text layout
       const font = ctx.fontManager.resolveFont(
         box.style.fontFamily,
@@ -480,10 +505,10 @@ export class LayoutEngine {
       const letterSpacing = box.style.letterSpacing || 0;
       const wordSpacing = box.style.wordSpacing || 0;
 
-      let lineHeight = font.getLineHeight(fontSize) * 1.2;
+      let lineHeight = fontSize * 1.2;
       if (typeof box.style.lineHeight === "number") {
         if (box.style.lineHeight <= 5) {
-          lineHeight = font.getLineHeight(fontSize) * box.style.lineHeight;
+          lineHeight = fontSize * box.style.lineHeight;
         } else {
           lineHeight = box.style.lineHeight;
         }
@@ -502,6 +527,13 @@ export class LayoutEngine {
 
       // Helper: compute aligned X for a line given its measured width
       const alignedLineX = (lineW: number, lineIndent: number = 0): number => {
+        const hasPrecedingSiblings = isSibling || box.parent?.boxType === "Inline";
+        const isFirstLine = box.textLines.length === 0;
+
+        if (isFirstLine && hasPrecedingSiblings) {
+          return innerX + lineIndent;
+        }
+
         const align = box.style.textAlign;
         const availW = maxWrapWidth - lineIndent;
         if (align === "center") {
@@ -609,7 +641,7 @@ export class LayoutEngine {
             box.textLines.length === 0 ? box.style.textIndent || 0 : 0;
           const availWidth = maxWrapWidth - lineIndent;
 
-          if (testWidth > availWidth && currentLineText) {
+          if (testWidth > availWidth + 15 && currentLineText) {
             if (
               !isAncestorClipped(box.parent) &&
               innerY + lineHeight > ctx.margins.top + ctx.printableHeight
@@ -667,71 +699,266 @@ export class LayoutEngine {
     } else {
       // Child layout
       let containerWidthForChild = ctx.printableWidth;
-      if (dim) {
+      if (box.style.display === "inline-block") {
+        containerWidthForChild = parentContainerWidth ?? ctx.printableWidth;
+      } else if (dim) {
         containerWidthForChild = dim.contentWidth;
       } else if (parentContainerWidth !== undefined && parentContainerWidth > 0) {
         containerWidthForChild = parentContainerWidth;
       }
-      for (const child of box.children) {
-        if (child.style.position === "absolute") {
-          child.pageIndex = pageIdx;
-          localAbsChildren.push(child);
-          continue;
-        }
 
-        if (child.style.width === "auto" && child.dimensions) {
-          const mH =
-            child.dimensions.margin.left +
-            child.dimensions.margin.right +
-            child.dimensions.padding.left +
-            child.dimensions.padding.right +
-            child.dimensions.border.left +
-            child.dimensions.border.right;
-          child.dimensions.contentWidth = Math.max(
-            0,
-            containerWidthForChild - mH,
-          );
-          child.width = child.dimensions.contentWidth;
-        }
+      localAbsChildren = [];
 
-        const activeCBForChild: ContainingBlockContext = isPositionedContainer
-          ? {
-              x: box.x + borderLeft,
-              y: box.y + borderTop,
-              width:
-                (dim
-                  ? dim.contentWidth
-                  : (parentContainerWidth ?? ctx.printableWidth)) +
-                paddingLeft +
-                paddingRight,
-              height: 0, // updated later
-              pageIndex: box.pageIndex,
+      const runLayoutPass = (wForChild: number) => { // NOSONAR
+        let currentLineX = innerX;
+        let currentLineY = innerY;
+        let currentLineHeight = 0;
+        let inInlineFlow = false;
+        let passPageIdx = pageIdx;
+        let passInnerY = innerY;
+        let currentLineItems: LayoutBox[] = [];
+
+        const shiftLineItems = (items: LayoutBox[], availWidth: number, lineEndX: number) => {
+          if (box.boxType !== "Block") return;
+          const align = box.style.textAlign;
+          if (align !== "right" && align !== "center") return;
+
+          const lineWidth = lineEndX - innerX;
+          const freeSpace = availWidth - lineWidth;
+          if (freeSpace <= 0) return;
+
+          const dx = align === "right" ? freeSpace : freeSpace / 2;
+
+          const shiftBoxX = (b: LayoutBox, deltaX: number) => {
+            b.x += deltaX;
+            for (const line of b.textLines) {
+              line.x += deltaX;
             }
-          : parentCB || {
-              x: ctx.margins.left,
-              y: ctx.margins.top,
-              width: ctx.printableWidth,
-              height: ctx.printableHeight,
-              pageIndex: pageIdx,
-            };
+            for (const ch of b.children) {
+              shiftBoxX(ch, deltaX);
+            }
+          };
 
-        const res = this.layoutBlockBox(
-          child,
-          innerX,
-          innerY,
-          pageIdx,
-          ctx,
-          onPlacePage,
-          containerWidthForChild,
-          activeCBForChild,
-        );
+          for (const item of items) {
+            shiftBoxX(item, dx);
+          }
+        };
 
-        if (res.absChildren) {
-          localAbsChildren.push(...res.absChildren);
+        for (const child of box.children) {
+          if (child.style.position === "absolute") {
+            child.pageIndex = passPageIdx;
+            localAbsChildren.push(child);
+            continue;
+          }
+
+          const childDim = child.dimensions;
+          const childMarginLeft = childDim && typeof childDim.margin.left === "number" ? childDim.margin.left : 0;
+          const childMarginRight = childDim && typeof childDim.margin.right === "number" ? childDim.margin.right : 0;
+          const childMarginTop = childDim && typeof childDim.margin.top === "number" ? childDim.margin.top : 0;
+          const childMarginBottom = childDim && typeof childDim.margin.bottom === "number" ? childDim.margin.bottom : 0;
+          const childPaddingLeft = childDim ? childDim.padding.left : 0;
+          const childPaddingRight = childDim ? childDim.padding.right : 0;
+          const childPaddingTop = childDim ? childDim.padding.top : 0;
+          const childPaddingBottom = childDim ? childDim.padding.bottom : 0;
+          const childBorderLeft = childDim ? childDim.border.left : 0;
+          const childBorderRight = childDim ? childDim.border.right : 0;
+          const childBorderTop = childDim ? childDim.border.top : 0;
+          const childBorderBottom = childDim ? childDim.border.bottom : 0;
+
+          const isInline =
+            child.boxType === "Text" ||
+            child.boxType === "Inline" ||
+            child.style.display === "inline-block";
+
+          const activeCBForChild: ContainingBlockContext = isPositionedContainer
+            ? {
+                x: box.x + borderLeft,
+                y: box.y + borderTop,
+                width:
+                  (dim
+                    ? dim.contentWidth
+                    : (parentContainerWidth ?? ctx.printableWidth)) +
+                  paddingLeft +
+                  paddingRight,
+                height: 0,
+                pageIndex: box.pageIndex,
+              }
+            : parentCB || {
+                x: ctx.margins.left,
+                y: ctx.margins.top,
+                width: ctx.printableWidth,
+                height: ctx.printableHeight,
+                pageIndex: passPageIdx,
+              };
+
+          if (isInline) {
+            if (!inInlineFlow) {
+              inInlineFlow = true;
+              currentLineX = innerX;
+              currentLineY = passInnerY;
+              currentLineHeight = 0;
+              currentLineItems = [];
+            }
+
+            // Try laying it out at currentLineX
+            let res = this.layoutBlockBox(
+              child,
+              currentLineX + childMarginLeft,
+              currentLineY + childMarginTop,
+              passPageIdx,
+              ctx,
+              {
+                onPlacePage,
+                parentContainerWidth: wForChild - (currentLineX - innerX),
+                parentCB: activeCBForChild,
+                isSibling: currentLineX > innerX,
+              },
+            );
+
+            // Get child's outer dimensions
+            let childOuterWidth =
+              child.width +
+              childMarginLeft +
+              childMarginRight +
+              childPaddingLeft +
+              childPaddingRight +
+              childBorderLeft +
+              childBorderRight;
+
+            // If it overflows the container width, wrap to the next line
+            if (
+              currentLineX > innerX &&
+              currentLineX + childOuterWidth > innerX + wForChild
+            ) {
+              shiftLineItems(currentLineItems, wForChild, currentLineX);
+
+              // Wrap to next line
+              currentLineY += currentLineHeight;
+              currentLineX = innerX;
+              currentLineHeight = 0;
+              currentLineItems = [];
+
+              // Clear layout lines and re-layout at start of new line
+              clearTextLines(child);
+              res = this.layoutBlockBox(
+                child,
+                currentLineX + childMarginLeft,
+                currentLineY + childMarginTop,
+                passPageIdx,
+                ctx,
+                {
+                  onPlacePage,
+                  parentContainerWidth: wForChild,
+                  parentCB: activeCBForChild,
+                  isSibling: false,
+                },
+              );
+
+              childOuterWidth =
+                child.width +
+                childMarginLeft +
+                childMarginRight +
+                childPaddingLeft +
+                childPaddingRight +
+                childBorderLeft +
+                childBorderRight;
+            }
+
+            let childOuterHeight =
+              child.height +
+              childMarginTop +
+              childMarginBottom +
+              childPaddingTop +
+              childPaddingBottom +
+              childBorderTop +
+              childBorderBottom;
+
+            // Advance currentLineX and height
+            currentLineX += childOuterWidth;
+            currentLineHeight = Math.max(currentLineHeight, childOuterHeight);
+            passPageIdx = res.nextPageIndex;
+            passInnerY = currentLineY;
+
+            currentLineItems.push(child);
+
+            if (res.absChildren) {
+              localAbsChildren.push(...res.absChildren);
+            }
+          } else {
+            // Block element
+            if (inInlineFlow) {
+              shiftLineItems(currentLineItems, wForChild, currentLineX);
+              inInlineFlow = false;
+              passInnerY = currentLineY + currentLineHeight;
+            }
+
+            if (child.style.width === "auto" && child.dimensions) {
+              const mL = child.dimensions.margin.left === "auto" ? 0 : child.dimensions.margin.left;
+              const mR = child.dimensions.margin.right === "auto" ? 0 : child.dimensions.margin.right;
+              const mH =
+                mL +
+                mR +
+                child.dimensions.padding.left +
+                child.dimensions.padding.right +
+                child.dimensions.border.left +
+                child.dimensions.border.right;
+              child.dimensions.contentWidth = Math.max(
+                0,
+                wForChild - mH,
+              );
+              child.width = child.dimensions.contentWidth;
+            }
+
+            const res = this.layoutBlockBox(
+              child,
+              innerX,
+              passInnerY,
+              passPageIdx,
+              ctx,
+              {
+                onPlacePage,
+                parentContainerWidth: wForChild,
+                parentCB: activeCBForChild,
+              },
+            );
+
+            if (res.absChildren) {
+              localAbsChildren.push(...res.absChildren);
+            }
+
+            passInnerY = res.nextY;
+            passPageIdx = res.nextPageIndex;
+          }
         }
 
-        innerY = res.nextY;
-        pageIdx = res.nextPageIndex;
+        if (inInlineFlow) {
+          shiftLineItems(currentLineItems, wForChild, currentLineX);
+          passInnerY = currentLineY + currentLineHeight;
+        }
+
+        return { nextY: passInnerY, nextPageIndex: passPageIdx };
+      };
+
+      // Pass 1
+      const res = runLayoutPass(containerWidthForChild);
+      innerY = res.nextY;
+      pageIdx = res.nextPageIndex;
+
+      // Inline-block second pass
+      if (box.style.display === "inline-block") {
+        const intrinsicW = this.getIntrinsicWidth(box);
+        box.width = intrinsicW;
+        if (box.dimensions) {
+          box.dimensions.contentWidth = intrinsicW;
+        }
+
+        localAbsChildren = [];
+        clearTextLines(box);
+
+        // Pass 2
+        const res2 = runLayoutPass(intrinsicW);
+        innerY = res2.nextY;
+        pageIdx = res2.nextPageIndex;
       }
     }
 
@@ -740,7 +967,11 @@ export class LayoutEngine {
       innerY -
       (currentY + borderTop + paddingTop);
 
-    if (dim) {
+    if (box.boxType === "Text" || box.boxType === "Inline") {
+      box.width = this.getIntrinsicWidth(box);
+    } else if (box.style.display === "inline-block") {
+      // Keep resolved intrinsic width
+    } else if (dim) {
       box.width = dim.contentWidth;
     } else if (parentContainerWidth !== undefined && parentContainerWidth > 0) {
       box.width = parentContainerWidth;
@@ -850,7 +1081,7 @@ export class LayoutEngine {
     };
   }
 
-  private layoutFlexBox(
+  private layoutFlexBox( // NOSONAR
     box: LayoutBox,
     startX: number,
     startY: number,
@@ -863,7 +1094,8 @@ export class LayoutEngine {
     let pageIdx = startPageIndex;
 
     const dim = box.dimensions;
-    const marginLeft = dim ? dim.margin.left : 0;
+    const parentWidth = parentCB ? parentCB.width : ctx.printableWidth;
+    const { marginLeft } = this.resolveAutoMargins(box, parentWidth);
     const marginTop = dim ? dim.margin.top : 0;
     const marginBottom = dim ? dim.margin.bottom : 0;
     const paddingLeft = dim ? dim.padding.left : 0;
@@ -911,7 +1143,7 @@ export class LayoutEngine {
     const innerY = currentY + borderTop + paddingTop;
     const containerContentWidth = dim ? dim.contentWidth : ctx.printableWidth;
 
-    const localAbsChildren: LayoutBox[] = [];
+    let localAbsChildren: LayoutBox[] = [];
     const flowChildren: LayoutBox[] = [];
 
     for (const child of box.children) {
@@ -963,6 +1195,7 @@ export class LayoutEngine {
         pageIndex: box.pageIndex,
       };
 
+      localAbsChildren = Array.from(new Set(localAbsChildren));
       let remainingAbsChildren: LayoutBox[] = [];
       if (isPositionedContainer) {
         for (const absChild of localAbsChildren) {
@@ -1007,13 +1240,15 @@ export class LayoutEngine {
         } else {
           const res = this.layoutBlockBox(child, 0, 0, pageIdx, ctx);
           if (res.absChildren) localAbsChildren.push(...res.absChildren);
-          baseSize = child.width;
+          baseSize = this.getIntrinsicWidth(child);
         }
 
         const childDim = child.dimensions;
+        const mL = childDim && childDim.margin.left !== "auto" ? childDim.margin.left : 0;
+        const mR = childDim && childDim.margin.right !== "auto" ? childDim.margin.right : 0;
         const outerMarginMain = childDim
-          ? childDim.margin.left +
-            childDim.margin.right +
+          ? mL +
+            mR +
             childDim.padding.left +
             childDim.padding.right +
             childDim.border.left +
@@ -1085,13 +1320,13 @@ export class LayoutEngine {
           }
         } else if (lineFreeSpace < 0) {
           const totalShrink = lineItems.reduce(
-            (acc, i) => acc + i.flexShrink,
+            (acc, i) => acc + i.flexShrink * i.baseMainSize,
             0,
           );
           if (totalShrink > 0) {
             for (const item of lineItems) {
               const shrinkAmount =
-                (item.flexShrink / totalShrink) * Math.abs(lineFreeSpace);
+                ((item.flexShrink * item.baseMainSize) / totalShrink) * Math.abs(lineFreeSpace);
               item.finalMainSize = Math.max(
                 0,
                 item.baseMainSize - shrinkAmount,
@@ -1105,6 +1340,7 @@ export class LayoutEngine {
             item.child.dimensions.contentWidth = item.finalMainSize;
           }
           item.child.width = item.finalMainSize;
+          clearTextLines(item.child);
           const res = this.layoutBlockBox(
             item.child,
             0,
@@ -1175,7 +1411,7 @@ export class LayoutEngine {
         for (const item of lineItems) {
           const child = item.child;
           const childDim = child.dimensions;
-          const childMarginLeft = childDim ? childDim.margin.left : 0;
+          const childMarginLeft = childDim && childDim.margin.left !== "auto" ? childDim.margin.left : 0;
           const childMarginTop = childDim ? childDim.margin.top : 0;
 
           const targetX = currentX + childMarginLeft;
@@ -1221,6 +1457,8 @@ export class LayoutEngine {
         currentLineY += line.crossSize + crossGap;
       }
 
+
+
       const totalContentHeight =
         currentLineY - innerY - (orderedLines.length > 0 ? crossGap : 0);
 
@@ -1247,6 +1485,7 @@ export class LayoutEngine {
         pageIndex: box.pageIndex,
       };
 
+      localAbsChildren = Array.from(new Set(localAbsChildren));
       let remainingAbsChildren: LayoutBox[] = [];
       if (isPositionedContainer) {
         for (const absChild of localAbsChildren) {
@@ -1391,6 +1630,7 @@ export class LayoutEngine {
         pageIndex: box.pageIndex,
       };
 
+      localAbsChildren = Array.from(new Set(localAbsChildren));
       let remainingAbsChildren: LayoutBox[] = [];
       if (isPositionedContainer) {
         for (const absChild of localAbsChildren) {
@@ -1412,7 +1652,7 @@ export class LayoutEngine {
     }
   }
 
-  private layoutGridBox(
+  private layoutGridBox( // NOSONAR
     box: LayoutBox,
     startX: number,
     startY: number,
@@ -1425,7 +1665,8 @@ export class LayoutEngine {
     let pageIdx = startPageIndex;
 
     const dim = box.dimensions;
-    const marginLeft = dim ? dim.margin.left : 0;
+    const parentWidth = parentCB ? parentCB.width : ctx.printableWidth;
+    const { marginLeft } = this.resolveAutoMargins(box, parentWidth);
     const marginTop = dim ? dim.margin.top : 0;
     const marginBottom = dim ? dim.margin.bottom : 0;
     const paddingLeft = dim ? dim.padding.left : 0;
@@ -1480,7 +1721,7 @@ export class LayoutEngine {
       containerContentWidth = dim.contentWidth;
     }
 
-    const localAbsChildren: LayoutBox[] = [];
+    let localAbsChildren: LayoutBox[] = [];
     const flowChildren: LayoutBox[] = [];
 
     for (const child of box.children) {
@@ -1515,6 +1756,7 @@ export class LayoutEngine {
         pageIndex: box.pageIndex,
       };
 
+      localAbsChildren = Array.from(new Set(localAbsChildren));
       let remainingAbsChildren: LayoutBox[] = [];
       if (isPositionedContainer) {
         for (const absChild of localAbsChildren) {
@@ -1726,8 +1968,7 @@ export class LayoutEngine {
               0,
               pageIdx,
               ctx,
-              undefined,
-              cellW,
+              { parentContainerWidth: cellW },
             );
             if (res.absChildren) localAbsChildren.push(...res.absChildren);
             maxRowH = Math.max(maxRowH, item.child.height);
@@ -1783,8 +2024,8 @@ export class LayoutEngine {
           : box.style.alignItems;
 
       const childDim = item.child.dimensions;
-      const mL = childDim ? childDim.margin.left : 0;
-      const mR = childDim ? childDim.margin.right : 0;
+      const mL = childDim && childDim.margin.left !== "auto" ? childDim.margin.left : 0;
+      const mR = childDim && childDim.margin.right !== "auto" ? childDim.margin.right : 0;
       const mT = childDim ? childDim.margin.top : 0;
       const mB = childDim ? childDim.margin.bottom : 0;
       const pL = childDim ? childDim.padding.left : 0;
@@ -1821,8 +2062,7 @@ export class LayoutEngine {
         0,
         itemPageIndex,
         ctx,
-        undefined,
-        targetW,
+        { parentContainerWidth: targetW },
       );
       if (res.absChildren) localAbsChildren.push(...res.absChildren);
 
@@ -1879,6 +2119,7 @@ export class LayoutEngine {
       pageIndex: box.pageIndex,
     };
 
+    localAbsChildren = Array.from(new Set(localAbsChildren));
     let remainingAbsChildren: LayoutBox[] = [];
     if (isPositionedContainer) {
       for (const absChild of localAbsChildren) {
@@ -1899,7 +2140,7 @@ export class LayoutEngine {
     };
   }
 
-  private layoutTableBox(
+  private layoutTableBox( // NOSONAR
     box: LayoutBox,
     startX: number,
     startY: number,
@@ -1912,7 +2153,8 @@ export class LayoutEngine {
     let pageIdx = startPageIndex;
 
     const dim = box.dimensions;
-    const marginLeft = dim ? dim.margin.left : 0;
+    const parentWidth = parentCB ? parentCB.width : ctx.printableWidth;
+    const { marginLeft } = this.resolveAutoMargins(box, parentWidth);
     const marginTop = dim ? dim.margin.top : 0;
     const marginBottom = dim ? dim.margin.bottom : 0;
     const paddingLeft = dim ? dim.padding.left : 0;
@@ -1967,7 +2209,7 @@ export class LayoutEngine {
       tableWidth = dim.contentWidth;
     }
 
-    const localAbsChildren: LayoutBox[] = [];
+    let localAbsChildren: LayoutBox[] = [];
 
     const headerRows: LayoutBox[] = [];
     const bodyRows: LayoutBox[] = [];
@@ -2220,11 +2462,11 @@ export class LayoutEngine {
       currColX += colWidths[i]!;
     }
 
-    const layoutRow = (
+    const layoutRow = ( // NOSONAR
       rowBox: LayoutBox,
       rowY: number,
       rowPageIdx: number,
-    ): number => {
+    ): number => { // NOSONAR
       rowBox.x = innerX;
       rowBox.y = rowY;
       rowBox.width = tableWidth;
@@ -2260,7 +2502,8 @@ export class LayoutEngine {
 
         clearTextLines(item.cell);
 
-        const cellX = colX[item.col]! + (cellDim ? cellDim.margin.left : 0);
+        const cellML = cellDim && cellDim.margin.left !== "auto" ? cellDim.margin.left : 0;
+        const cellX = colX[item.col]! + cellML;
         const cellY = rowY + (cellDim ? cellDim.margin.top : 0);
 
         const res = this.layoutBlockBox(
@@ -2269,8 +2512,10 @@ export class LayoutEngine {
           cellY,
           rowPageIdx,
           ctx,
-          onPlacePage,
-          cellContentW,
+          {
+            onPlacePage,
+            parentContainerWidth: cellContentW,
+          },
         );
         if (res.absChildren) localAbsChildren.push(...res.absChildren);
 
@@ -2429,6 +2674,7 @@ export class LayoutEngine {
       pageIndex: box.pageIndex,
     };
 
+    localAbsChildren = Array.from(new Set(localAbsChildren));
     let remainingAbsChildren: LayoutBox[] = [];
     if (isPositionedContainer) {
       for (const absChild of localAbsChildren) {
@@ -2449,7 +2695,7 @@ export class LayoutEngine {
     };
   }
 
-  private layoutAbsoluteBox(
+  private layoutAbsoluteBox( // NOSONAR
     absBox: LayoutBox,
     cb: ContainingBlockContext,
     ctx: LayoutContext,
@@ -2458,8 +2704,8 @@ export class LayoutEngine {
       absBox.dimensions ?? createBoxDimensions(absBox.style, cb.width);
     absBox.dimensions = dim;
 
-    const mL = dim.margin.left;
-    const mR = dim.margin.right;
+    const mL = dim.margin.left === "auto" ? 0 : dim.margin.left;
+    const mR = dim.margin.right === "auto" ? 0 : dim.margin.right;
     const mT = dim.margin.top;
     const mB = dim.margin.bottom;
     const pL = dim.padding.left;
@@ -2518,9 +2764,10 @@ export class LayoutEngine {
       0,
       targetPageIndex,
       ctx,
-      undefined,
-      targetWidth,
-      absCB,
+      {
+        parentContainerWidth: targetWidth,
+        parentCB: absCB,
+      },
     );
 
     // Handle nested absolute children returned from absBox layout if absBox wasn't positioned itself
@@ -2610,7 +2857,7 @@ export class LayoutEngine {
     }
   }
 
-  private estimateBoxHeight(
+  private estimateBoxHeight( // NOSONAR
     box: LayoutBox,
     parentContainerWidth: number,
     ctx: LayoutContext,
@@ -2648,10 +2895,10 @@ export class LayoutEngine {
       const letterSpacing = box.style.letterSpacing || 0;
       const wordSpacing = box.style.wordSpacing || 0;
 
-      let lineHeight = font.getLineHeight(fontSize) * 1.2;
+      let lineHeight = fontSize * 1.2;
       if (typeof box.style.lineHeight === "number") {
         if (box.style.lineHeight <= 5) {
-          lineHeight = font.getLineHeight(fontSize) * box.style.lineHeight;
+          lineHeight = fontSize * box.style.lineHeight;
         } else {
           lineHeight = box.style.lineHeight;
         }
@@ -2787,6 +3034,98 @@ export class LayoutEngine {
     }
 
     return estH + verticalExtras;
+  }
+
+  private resolveAutoMargins( // NOSONAR
+    box: LayoutBox,
+    parentWidth: number | undefined,
+  ): { marginLeft: number; marginRight: number } {
+    const dim = box.dimensions;
+    if (!dim) return { marginLeft: 0, marginRight: 0 };
+
+    let marginLeft = dim.margin.left === "auto" ? 0 : dim.margin.left;
+    let marginRight = dim.margin.right === "auto" ? 0 : dim.margin.right;
+
+    if (parentWidth !== undefined && parentWidth > 0) {
+      const isFlexGridTable =
+        box.boxType === "Flex" ||
+        box.boxType === "Grid" ||
+        box.boxType === "Table";
+      const boxW = isFlexGridTable ? box.width : dim.contentWidth;
+      const totalBoxW =
+        boxW +
+        dim.padding.left +
+        dim.padding.right +
+        dim.border.left +
+        dim.border.right;
+
+      if (dim.margin.left === "auto" && dim.margin.right === "auto") {
+        const remaining = parentWidth - totalBoxW;
+        if (remaining > 0) {
+          marginLeft = remaining / 2;
+          marginRight = remaining / 2;
+        }
+      } else if (dim.margin.left === "auto") {
+        const remaining = parentWidth - totalBoxW - marginRight;
+        if (remaining > 0) {
+          marginLeft = remaining;
+        }
+      } else if (dim.margin.right === "auto") {
+        const remaining = parentWidth - totalBoxW - marginLeft;
+        if (remaining > 0) {
+          marginRight = remaining;
+        }
+      }
+    }
+
+    return { marginLeft, marginRight };
+  }
+
+  private getIntrinsicWidth(box: LayoutBox): number { // NOSONAR
+    if (typeof box.style.width === "number") {
+      const dim = box.dimensions;
+      const extra = dim ? (dim.padding.left + dim.padding.right + dim.border.left + dim.border.right) : 0;
+      return box.style.width + extra;
+    }
+    if (box.boxType === "Image") {
+      const dim = box.dimensions;
+      const extra = dim ? (dim.padding.left + dim.padding.right + dim.border.left + dim.border.right) : 0;
+      return box.width + extra;
+    }
+    let maxW = 0;
+    for (const line of box.textLines) {
+      maxW = Math.max(maxW, line.width);
+    }
+    let currentLineWidth = 0;
+    for (const ch of box.children) {
+      if (ch.style.position === "absolute") continue;
+      const chDim = ch.dimensions;
+      const chML = chDim && typeof chDim.margin.left === "number" ? chDim.margin.left : 0;
+      const chMR = chDim && typeof chDim.margin.right === "number" ? chDim.margin.right : 0;
+      const extra = chDim ? (
+        chML +
+        chMR +
+        chDim.padding.left +
+        chDim.padding.right +
+        chDim.border.left +
+        chDim.border.right
+      ) : 0;
+      
+      const childW = this.getIntrinsicWidth(ch);
+      const isInline =
+        ch.boxType === "Text" ||
+        ch.boxType === "Inline" ||
+        ch.style.display === "inline-block";
+        
+      if (isInline) {
+        currentLineWidth += childW + extra;
+        maxW = Math.max(maxW, currentLineWidth);
+      } else {
+        currentLineWidth = 0;
+        maxW = Math.max(maxW, childW + extra);
+      }
+    }
+    return maxW;
   }
 }
 

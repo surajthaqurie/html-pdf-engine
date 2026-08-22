@@ -3,6 +3,7 @@ import { ParsedColor } from "./values/units.js";
 export type DisplayType =
   | "block"
   | "inline"
+  | "inline-block"
   | "none"
   | "table"
   | "table-header-group"
@@ -113,9 +114,9 @@ export interface ComputedStyle {
   overflowY: OverflowType;
 
   marginTop: number;
-  marginRight: number;
+  marginRight: number | "auto";
   marginBottom: number;
-  marginLeft: number;
+  marginLeft: number | "auto";
 
   paddingTop: number;
   paddingRight: number;
